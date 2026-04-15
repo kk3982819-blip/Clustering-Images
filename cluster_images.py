@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+from dataclasses import dataclass
 import importlib.util
 import json
 import logging
@@ -16,10 +17,59 @@ import cv2
 from PIL import Image, ImageFilter, ImageOps
 from sklearn.cluster import AgglomerativeClustering, HDBSCAN
 
+try:
+    from ultralytics import YOLO
+except ImportError:
+    YOLO = None
+
 
 SUPPORTED_EXTENSIONS = {".jpg", ".jpeg", ".png"}
 ORB_EXTRACTOR = cv2.ORB_create(1200)
 ORB_MATCHER = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True)
+YOLO_MODEL_NAME = "yolov8n-seg.pt"
+YOLO_CONFIDENCE_THRESHOLD = 0.25
+SEGMENTATION_MIN_CONTOUR_AREA = 300
+_YOLO_MODEL: object | None = None
+SCENE_LABEL_PROMPTS = {
+    "sky": ["sky", "blue sky"],
+    "green grass": ["grass", "green field"],
+    "trees": ["trees"],
+    "window": ["window", "a window", "sliding glass door"],
+    "balcony": ["balcony", "a balcony"],
+    "outdoor view": ["outdoor view"],
+    "white wall": ["white wall", "a white painted wall"],
+    "floor tiles": ["floor tiles", "tile floor"],
+}
+SCENE_LABEL_THRESHOLDS = {
+    "sky": 0.20,
+    "green grass": 0.20,
+    "trees": 0.20,
+    "window": 0.21,
+    "balcony": 0.22,
+    "outdoor view": 0.20,
+    "white wall": 0.22,
+    "floor tiles": 0.22,
+}
+SCENE_LABEL_MAX_AREA_RATIO = {
+    "sky": 0.18,
+    "green grass": 0.18,
+    "trees": 0.18,
+    "window": 0.28,
+    "balcony": 0.30,
+    "outdoor view": 0.30,
+    "white wall": 0.26,
+    "floor tiles": 0.60,
+}
+SCENE_LABEL_COLORS = {
+    "sky": (235, 180, 70),
+    "green grass": (80, 200, 80),
+    "trees": (30, 150, 60),
+    "window": (255, 170, 0),
+    "balcony": (255, 140, 0),
+    "outdoor view": (255, 120, 60),
+    "white wall": (200, 200, 200),
+    "floor tiles": (0, 180, 255),
+}
 STRICT_ITEM_PROMPTS = [
     "a real estate interior photo of an empty room",
     "a real estate interior photo of a furnished room",
@@ -48,6 +98,62 @@ STRICT_ITEM_PROMPTS = [
     "a window",
     "a sliding glass door",
 ]
+FLAG_LABELS = [
+    "grass",
+    "green field",
+    "sky",
+    "blue sky",
+    "window",
+    "balcony",
+    "trees",
+    "outdoor view",
+    "empty room",
+    "furnished room",
+    "floor tiles",
+    "white wall",
+]
+
+
+Boundary = tuple[tuple[int, int], ...]
+
+
+@dataclass(frozen=True)
+class SceneRegionCandidate:
+    box: tuple[int, int, int, int]
+    boundary: Boundary
+    allowed_labels: tuple[str, ...]
+
+
+@dataclass
+class SceneLabelerRuntime:
+    model: object
+    preprocess: object
+    device: str
+    text_features: torch.Tensor
+    label_to_prompt_indices: dict[str, list[int]]
+
+
+@dataclass(frozen=True)
+class SceneLabelDetection:
+    label: str
+    score: float
+    box: tuple[int, int, int, int]
+    boundary: Boundary
+
+
+@dataclass
+class SceneDetectionGroup:
+    box: tuple[int, int, int, int]
+    boundary: Boundary
+    labels: list[tuple[str, float]]
+
+
+@dataclass(frozen=True)
+class ImageAnnotation:
+    source: str
+    box: tuple[int, int, int, int]
+    boundary: Boundary
+    labels: tuple[tuple[str, float], ...]
 
 
 def load_clip_module() -> tuple[object, str]:
@@ -150,7 +256,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--semantic-merge-threshold",
         type=float,
-        default=0.95,
+        default=0.98,
         help="Merge back same-room subclusters when their CLIP centroid similarity is above this threshold.",
     )
     parser.add_argument(
@@ -603,6 +709,24 @@ def combine_features(
     return l2_normalize(np.concatenate(weighted_parts, axis=1).astype(np.float32, copy=False))
 
 
+def get_image_tags(
+    image_feature: torch.Tensor,
+    text_features: torch.Tensor,
+    labels: list[str],
+    top_k: int = 4,
+) -> tuple[list[str], list[float]]:
+    if image_feature.ndim == 1:
+        image_feature = image_feature.unsqueeze(0)
+
+    similarity = (image_feature @ text_features.T).squeeze()
+    top_k = min(top_k, len(labels))
+    values, indices = similarity.topk(top_k)
+    tag_indices = indices.tolist()
+    tags = [labels[index] for index in tag_indices]
+    scores = [float(score) for score in values.tolist()]
+    return tags, scores
+
+
 def embed_images(
     image_paths: list[Path],
     model_name: str,
@@ -610,7 +734,7 @@ def embed_images(
     device: str,
     cache_dir: Path,
     logger: logging.Logger,
-) -> tuple[np.ndarray, list[Path]]:
+) -> tuple[np.ndarray, list[Path], list[list[str]]]:
     clip, clip_source = load_clip_module()
 
     cache_dir.mkdir(parents=True, exist_ok=True)
@@ -620,6 +744,12 @@ def embed_images(
 
     embedded_paths: list[Path] = []
     batches: list[np.ndarray] = []
+    image_tags: list[list[str]] = []
+
+    with torch.no_grad():
+        text_tokens = clip.tokenize(FLAG_LABELS).to(device)
+        text_features = model.encode_text(text_tokens).float()
+        text_features = text_features / text_features.norm(dim=-1, keepdim=True).clamp_min(1e-12)
 
     with torch.no_grad():
         for start in range(0, len(image_paths), batch_size):
@@ -639,15 +769,21 @@ def embed_images(
                 continue
 
             batch_tensor = torch.stack(batch_tensors).to(device)
-            batch_features = model.encode_image(batch_tensor).float().cpu().numpy()
-            batches.append(batch_features)
+            batch_features = model.encode_image(batch_tensor).float()
+            normalized_batch_features = batch_features / batch_features.norm(dim=-1, keepdim=True).clamp_min(1e-12)
+
+            for image_feature in normalized_batch_features:
+                tags, _ = get_image_tags(image_feature, text_features, FLAG_LABELS)
+                image_tags.append(tags)
+
+            batches.append(batch_features.cpu().numpy().astype(np.float32, copy=False))
             embedded_paths.extend(batch_valid_paths)
             logger.info("Embedded %s/%s images", len(embedded_paths), len(image_paths))
 
     if not batches:
-        return np.empty((0, 0), dtype=np.float32), []
+        return np.empty((0, 0), dtype=np.float32), [], []
 
-    return l2_normalize(np.concatenate(batches, axis=0).astype(np.float32, copy=False)), embedded_paths
+    return l2_normalize(np.concatenate(batches, axis=0).astype(np.float32, copy=False)), embedded_paths, image_tags
 
 
 def extract_clip_item_features(
@@ -1006,44 +1142,591 @@ def reset_output_dir(output_dir: Path) -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
 
 
+def load_yolo_model(logger: logging.Logger) -> object:
+    global _YOLO_MODEL
+
+    if YOLO is None:
+        raise RuntimeError("Ultralytics is not installed. Install it with `pip install ultralytics`.")
+    if "-seg" not in YOLO_MODEL_NAME:
+        raise RuntimeError(f"YOLO model must be a segmentation model. Got: {YOLO_MODEL_NAME}")
+
+    if _YOLO_MODEL is None:
+        logger.info("Loading YOLO model %s", YOLO_MODEL_NAME)
+        try:
+            _YOLO_MODEL = YOLO(YOLO_MODEL_NAME)
+        except Exception as exc:
+            raise RuntimeError(
+                "Could not load YOLO segmentation model `yolov8n-seg.pt`. Ultralytics will download it automatically "
+                "when the weight is not cached locally. Download the weight once or place `yolov8n-seg.pt` in the working directory, "
+                "then rerun the clustering command."
+            ) from exc
+
+    return _YOLO_MODEL
+
+
+def load_scene_labeler_runtime(
+    model_name: str,
+    device: str,
+    cache_dir: Path,
+    logger: logging.Logger,
+) -> SceneLabelerRuntime:
+    clip, model, preprocess = load_clip_runtime(
+        model_name=model_name,
+        device=device,
+        cache_dir=cache_dir,
+        logger=logger,
+    )
+
+    prompt_texts: list[str] = []
+    label_to_prompt_indices: dict[str, list[int]] = {}
+    for label, prompts in SCENE_LABEL_PROMPTS.items():
+        label_to_prompt_indices[label] = list(range(len(prompt_texts), len(prompt_texts) + len(prompts)))
+        prompt_texts.extend(prompts)
+
+    with torch.no_grad():
+        text_tokens = clip.tokenize(prompt_texts).to(device)
+        text_features = model.encode_text(text_tokens).float()
+        text_features = text_features / text_features.norm(dim=-1, keepdim=True).clamp_min(1e-12)
+
+    return SceneLabelerRuntime(
+        model=model,
+        preprocess=preprocess,
+        device=device,
+        text_features=text_features,
+        label_to_prompt_indices=label_to_prompt_indices,
+    )
+
+
+def clamp_box(
+    x1: int,
+    y1: int,
+    x2: int,
+    y2: int,
+    width: int,
+    height: int,
+) -> tuple[int, int, int, int] | None:
+    x1 = max(0, min(int(x1), width - 1))
+    y1 = max(0, min(int(y1), height - 1))
+    x2 = max(0, min(int(x2), width - 1))
+    y2 = max(0, min(int(y2), height - 1))
+    if x2 <= x1 or y2 <= y1:
+        return None
+    if (x2 - x1) < 12 or (y2 - y1) < 12:
+        return None
+    return x1, y1, x2, y2
+
+
+def box_to_boundary(box: tuple[int, int, int, int]) -> Boundary:
+    x1, y1, x2, y2 = box
+    return ((x1, y1), (x2, y1), (x2, y2), (x1, y2))
+
+
+def normalize_boundary_points(
+    points: np.ndarray | list[tuple[float, float]] | list[list[float]],
+    width: int,
+    height: int,
+) -> Boundary:
+    normalized: list[tuple[int, int]] = []
+    for point in points:
+        x = max(0, min(int(round(float(point[0]))), width - 1))
+        y = max(0, min(int(round(float(point[1]))), height - 1))
+        candidate = (x, y)
+        if normalized and normalized[-1] == candidate:
+            continue
+        normalized.append(candidate)
+
+    if len(normalized) > 1 and normalized[0] == normalized[-1]:
+        normalized.pop()
+    if len(normalized) < 3:
+        return ()
+    return tuple(normalized)
+
+
+def contour_to_boundary(contour: np.ndarray, width: int, height: int) -> Boundary:
+    perimeter = float(cv2.arcLength(contour, True))
+    epsilon = max(2.0, perimeter * 0.01)
+    approx = cv2.approxPolyDP(contour, epsilon, True)
+    polygon = approx.reshape(-1, 2) if len(approx) >= 3 else contour.reshape(-1, 2)
+    boundary = normalize_boundary_points(polygon, width, height)
+    if boundary:
+        return boundary
+
+    x, y, w, h = cv2.boundingRect(contour)
+    fallback_box = clamp_box(x, y, x + w - 1, y + h - 1, width, height)
+    if fallback_box is None:
+        return ()
+    return box_to_boundary(fallback_box)
+
+
+def boundary_to_cv_points(boundary: Boundary) -> np.ndarray:
+    return np.array(boundary, dtype=np.int32).reshape((-1, 1, 2))
+
+
+def serialize_box(box: tuple[int, int, int, int]) -> list[int]:
+    return [int(value) for value in box]
+
+
+def serialize_boundary(boundary: Boundary) -> list[list[int]]:
+    return [[int(x), int(y)] for x, y in boundary]
+
+
+def serialize_labels(labels: tuple[tuple[str, float], ...] | list[tuple[str, float]]) -> list[dict[str, object]]:
+    return [{"label": label, "score": round(float(score), 4)} for label, score in labels]
+
+
+def annotation_color(annotation: ImageAnnotation) -> tuple[int, int, int]:
+    if annotation.source == "yolo":
+        return (0, 255, 0)
+
+    primary_label = annotation.labels[0][0] if annotation.labels else ""
+    return SCENE_LABEL_COLORS.get(primary_label, (255, 170, 0))
+
+
+def serialize_annotation(annotation: ImageAnnotation) -> dict[str, object]:
+    return {
+        "source": annotation.source,
+        "box": serialize_box(annotation.box),
+        "boundary": serialize_boundary(annotation.boundary),
+        "labels": serialize_labels(annotation.labels),
+    }
+
+
+def mask_to_scene_candidates(
+    mask: np.ndarray,
+    width: int,
+    height: int,
+    allowed_labels: tuple[str, ...],
+    min_area_ratio: float,
+    pad_ratio: float = 0.02,
+    max_candidates: int = 4,
+) -> list[SceneRegionCandidate]:
+    mask_u8 = (mask.astype(np.uint8) * 255) if mask.dtype != np.uint8 else mask.copy()
+    if mask_u8.ndim != 2:
+        raise ValueError("Scene candidate masks must be single-channel.")
+
+    kernel_w = max(3, width // 80)
+    kernel_h = max(3, height // 80)
+    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (kernel_w, kernel_h))
+    cleaned = cv2.morphologyEx(mask_u8, cv2.MORPH_CLOSE, kernel)
+    cleaned = cv2.morphologyEx(cleaned, cv2.MORPH_OPEN, kernel)
+
+    contours, _ = cv2.findContours(cleaned, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    min_area = max(1, int(width * height * min_area_ratio))
+    pad_x = max(4, int(width * pad_ratio))
+    pad_y = max(4, int(height * pad_ratio))
+
+    candidates: list[SceneRegionCandidate] = []
+    for contour in sorted(contours, key=cv2.contourArea, reverse=True)[:max_candidates]:
+        if cv2.contourArea(contour) < min_area:
+            continue
+
+        boundary = contour_to_boundary(contour, width, height)
+        if not boundary:
+            continue
+        x, y, w, h = cv2.boundingRect(contour)
+        box = clamp_box(x - pad_x, y - pad_y, x + w - 1 + pad_x, y + h - 1 + pad_y, width, height)
+        if box is not None:
+            candidates.append(SceneRegionCandidate(box=box, boundary=boundary, allowed_labels=allowed_labels))
+
+    return candidates
+
+
+def generate_scene_region_candidates(image: np.ndarray) -> list[SceneRegionCandidate]:
+    height, width = image.shape[:2]
+    hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
+    saturation = hsv[:, :, 1].astype(np.int16)
+    value = hsv[:, :, 2].astype(np.int16)
+
+    blue = image[:, :, 0].astype(np.int16)
+    green = image[:, :, 1].astype(np.int16)
+    red = image[:, :, 2].astype(np.int16)
+
+    row_grid = np.arange(height, dtype=np.int16).reshape(-1, 1)
+    top_region = row_grid < int(height * 0.72)
+    upper_region = row_grid < int(height * 0.86)
+    mid_upper_region = (row_grid > int(height * 0.12)) & upper_region
+
+    sky_mask = (blue > green + 12) & (blue > red + 18) & (blue > 105) & top_region
+    vegetation_mask = (green > red + 10) & (green > blue + 5) & (green > 70)
+    view_seed_mask = sky_mask | vegetation_mask
+    view_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (max(9, width // 28), max(9, height // 24)))
+    expanded_view_mask = cv2.dilate(view_seed_mask.astype(np.uint8) * 255, view_kernel, iterations=1) > 0
+    wall_mask = (value > 190) & (saturation < 32) & mid_upper_region & ~expanded_view_mask
+
+    candidates: list[SceneRegionCandidate] = []
+    candidates.extend(
+        mask_to_scene_candidates(
+            expanded_view_mask,
+            width=width,
+            height=height,
+            allowed_labels=("window", "balcony", "outdoor view"),
+            min_area_ratio=0.01,
+            max_candidates=4,
+        )
+    )
+    candidates.extend(
+        mask_to_scene_candidates(
+            sky_mask,
+            width=width,
+            height=height,
+            allowed_labels=("sky", "outdoor view"),
+            min_area_ratio=0.005,
+            max_candidates=5,
+        )
+    )
+    candidates.extend(
+        mask_to_scene_candidates(
+            vegetation_mask,
+            width=width,
+            height=height,
+            allowed_labels=("green grass", "trees", "outdoor view"),
+            min_area_ratio=0.004,
+            max_candidates=6,
+        )
+    )
+    candidates.extend(
+        mask_to_scene_candidates(
+            wall_mask,
+            width=width,
+            height=height,
+            allowed_labels=("white wall",),
+            min_area_ratio=0.05,
+            max_candidates=4,
+        )
+    )
+
+    fixed_boxes = [
+        (clamp_box(0, int(height * 0.55), width - 1, height - 1, width, height), ("floor tiles",)),
+        (clamp_box(0, int(height * 0.65), int(width * 0.58), height - 1, width, height), ("floor tiles",)),
+        (clamp_box(int(width * 0.42), int(height * 0.65), width - 1, height - 1, width, height), ("floor tiles",)),
+    ]
+
+    for box, allowed_labels in fixed_boxes:
+        if box is not None:
+            candidates.append(
+                SceneRegionCandidate(
+                    box=box,
+                    boundary=box_to_boundary(box),
+                    allowed_labels=allowed_labels,
+                )
+            )
+
+    deduped_candidates: list[SceneRegionCandidate] = []
+    seen: set[tuple[tuple[int, int, int, int], Boundary, tuple[str, ...]]] = set()
+    for candidate in candidates:
+        key = (candidate.box, candidate.boundary, candidate.allowed_labels)
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped_candidates.append(candidate)
+
+    return deduped_candidates
+
+
+def compute_box_iou(box_a: tuple[int, int, int, int], box_b: tuple[int, int, int, int]) -> float:
+    ax1, ay1, ax2, ay2 = box_a
+    bx1, by1, bx2, by2 = box_b
+
+    inter_x1 = max(ax1, bx1)
+    inter_y1 = max(ay1, by1)
+    inter_x2 = min(ax2, bx2)
+    inter_y2 = min(ay2, by2)
+    if inter_x2 <= inter_x1 or inter_y2 <= inter_y1:
+        return 0.0
+
+    inter_area = float((inter_x2 - inter_x1) * (inter_y2 - inter_y1))
+    area_a = float((ax2 - ax1) * (ay2 - ay1))
+    area_b = float((bx2 - bx1) * (by2 - by1))
+    union = area_a + area_b - inter_area
+    if union <= 0.0:
+        return 0.0
+    return inter_area / union
+
+
+def detect_scene_regions(
+    image_rgb: Image.Image,
+    image_bgr: np.ndarray,
+    scene_labeler: SceneLabelerRuntime,
+) -> list[SceneDetectionGroup]:
+    image_area = float(image_bgr.shape[0] * image_bgr.shape[1])
+    candidates = generate_scene_region_candidates(image_bgr)
+    if not candidates:
+        return []
+
+    crop_tensors: list[torch.Tensor] = []
+    valid_candidates: list[SceneRegionCandidate] = []
+    for candidate in candidates:
+        x1, y1, x2, y2 = candidate.box
+        crop = image_rgb.crop((x1, y1, x2 + 1, y2 + 1))
+        if crop.width < 12 or crop.height < 12:
+            continue
+        crop_tensors.append(scene_labeler.preprocess(crop))
+        valid_candidates.append(candidate)
+
+    if not crop_tensors:
+        return []
+
+    batch_tensor = torch.stack(crop_tensors).to(scene_labeler.device)
+    with torch.no_grad():
+        crop_features = scene_labeler.model.encode_image(batch_tensor).float()
+        crop_features = crop_features / crop_features.norm(dim=-1, keepdim=True).clamp_min(1e-12)
+        similarity = crop_features @ scene_labeler.text_features.T
+
+    label_detections: list[SceneLabelDetection] = []
+    for row, candidate in zip(similarity, valid_candidates):
+        x1, y1, x2, y2 = candidate.box
+        area_ratio = float((x2 - x1) * (y2 - y1)) / image_area
+        for label in candidate.allowed_labels:
+            prompt_indices = scene_labeler.label_to_prompt_indices[label]
+            score = float(row[prompt_indices].max().item())
+            if score >= SCENE_LABEL_THRESHOLDS[label] and area_ratio <= SCENE_LABEL_MAX_AREA_RATIO[label]:
+                label_detections.append(
+                    SceneLabelDetection(
+                        label=label,
+                        score=score,
+                        box=candidate.box,
+                        boundary=candidate.boundary,
+                    )
+                )
+
+    kept_detections: list[SceneLabelDetection] = []
+    for label in SCENE_LABEL_PROMPTS:
+        per_label = sorted(
+            (detection for detection in label_detections if detection.label == label),
+            key=lambda detection: detection.score,
+            reverse=True,
+        )
+        for detection in per_label:
+            if any(compute_box_iou(detection.box, kept.box) > 0.45 for kept in kept_detections if kept.label == label):
+                continue
+            kept_detections.append(detection)
+
+    merged_groups: list[SceneDetectionGroup] = []
+    for detection in sorted(kept_detections, key=lambda item: item.score, reverse=True):
+        matched_group = None
+        for group in merged_groups:
+            if compute_box_iou(detection.box, group.box) > 0.82:
+                matched_group = group
+                break
+
+        if matched_group is None:
+            merged_groups.append(
+                SceneDetectionGroup(
+                    box=detection.box,
+                    boundary=detection.boundary,
+                    labels=[(detection.label, detection.score)],
+                )
+            )
+            continue
+
+        if detection.label not in {label for label, _ in matched_group.labels}:
+            matched_group.labels.append((detection.label, detection.score))
+
+    for group in merged_groups:
+        group.labels.sort(key=lambda item: item[1], reverse=True)
+
+    return merged_groups
+
+
+def draw_labeled_boundary(
+    image: np.ndarray,
+    boundary: Boundary,
+    box: tuple[int, int, int, int],
+    lines: list[str],
+    color: tuple[int, int, int],
+) -> None:
+    x1, y1, _, _ = box
+    image_height, image_width = image.shape[:2]
+    short_side = min(image_height, image_width)
+    boundary_thickness = max(2, int(round(short_side / 900)))
+    draw_boundary = boundary if boundary else box_to_boundary(box)
+    cv2.polylines(
+        image,
+        [boundary_to_cv_points(draw_boundary)],
+        isClosed=True,
+        color=color,
+        thickness=boundary_thickness,
+        lineType=cv2.LINE_AA,
+    )
+
+    font = cv2.FONT_HERSHEY_DUPLEX
+    font_scale = min(1.3, max(0.9, short_side / 2400.0))
+    text_thickness = max(2, int(round(short_side / 1200)))
+    outline_thickness = text_thickness + 2
+    line_gap = max(10, int(round(short_side / 220)))
+    pad_x = max(12, int(round(short_side / 180)))
+    pad_y = max(10, int(round(short_side / 220)))
+
+    text_sizes = [cv2.getTextSize(line, font, font_scale, text_thickness)[0] for line in lines]
+    text_width = max((size[0] for size in text_sizes), default=0)
+    text_height = sum(size[1] for size in text_sizes) + line_gap * max(0, len(text_sizes) - 1)
+    panel_width = text_width + (pad_x * 2)
+    panel_height = text_height + (pad_y * 2)
+
+    bg_x1 = min(max(0, x1), max(0, image_width - panel_width - 1))
+    bg_y1 = y1 - panel_height - 10
+    if bg_y1 < 0:
+        bg_y1 = y1 + 10
+    bg_y1 = min(max(0, bg_y1), max(0, image_height - panel_height - 1))
+    bg_x2 = min(image_width - 1, bg_x1 + panel_width)
+    bg_y2 = min(image_height - 1, bg_y1 + panel_height)
+
+    overlay = image.copy()
+    cv2.rectangle(overlay, (bg_x1, bg_y1), (bg_x2, bg_y2), (24, 24, 24), thickness=-1)
+    cv2.addWeighted(overlay, 0.86, image, 0.14, 0.0, image)
+    cv2.rectangle(image, (bg_x1, bg_y1), (bg_x2, bg_y2), color, max(2, boundary_thickness))
+
+    text_y = bg_y1 + pad_y + text_sizes[0][1]
+    for line, size in zip(lines, text_sizes):
+        origin = (bg_x1 + pad_x, text_y)
+        cv2.putText(
+            image,
+            line,
+            origin,
+            font,
+            font_scale,
+            (16, 16, 16),
+            outline_thickness,
+            cv2.LINE_AA,
+        )
+        cv2.putText(
+            image,
+            line,
+            origin,
+            font,
+            font_scale,
+            (255, 255, 255),
+            text_thickness,
+            cv2.LINE_AA,
+        )
+        text_y += size[1] + line_gap
+
+
+def draw_segmentation_boundaries(
+    image_path: Path,
+    output_path: Path,
+    mask_output_dir: Path,
+    yolo_model: object,
+) -> list[str]:
+    image = cv2.imread(str(image_path))
+    if image is None:
+        raise RuntimeError(f"Could not read image for segmentation: {image_path}")
+
+    mask_output_dir.mkdir(parents=True, exist_ok=True)
+    results = yolo_model(str(image_path), verbose=False)
+    saved_masks: list[str] = []
+    mask_index = 0
+
+    for result in results:
+        if result.masks is None:
+            continue
+
+        masks = result.masks.data.cpu().numpy()
+        boxes = result.boxes
+        for index, mask in enumerate(masks):
+            mask_u8 = (mask * 255).astype(np.uint8)
+            mask_name = f"{image_path.stem}_mask_{mask_index:03d}.png"
+            mask_path = mask_output_dir / mask_name
+            if not cv2.imwrite(str(mask_path), mask_u8):
+                raise RuntimeError(f"Could not write segmentation mask: {mask_path}")
+            saved_masks.append(mask_name)
+            mask_index += 1
+
+            if index >= len(boxes):
+                continue
+
+            conf = float(boxes.conf[index]) if getattr(boxes, "conf", None) is not None else 1.0
+            if conf < YOLO_CONFIDENCE_THRESHOLD:
+                continue
+
+            contours, _ = cv2.findContours(mask_u8, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            cls = int(boxes.cls[index])
+            label = result.names[cls]
+
+            for contour in contours:
+                if cv2.contourArea(contour) < SEGMENTATION_MIN_CONTOUR_AREA:
+                    continue
+
+                cv2.drawContours(image, [contour], -1, (0, 255, 0), 2)
+                x, y = contour[0][0]
+                cv2.putText(
+                    image,
+                    label,
+                    (int(x), int(y)),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.6,
+                    (0, 255, 0),
+                    2,
+                    cv2.LINE_AA,
+                )
+
+    if not cv2.imwrite(str(output_path), image):
+        raise RuntimeError(f"Could not write segmented output image: {output_path}")
+
+    return saved_masks
+
+
 def copy_clustered_images(
     image_paths: list[Path],
     labels: np.ndarray,
+    image_tags: list[list[str]],
     output_dir: Path,
+    yolo_model: object,
 ) -> dict:
-    clusters_payload: list[dict] = []
-    noise_images: list[str] = []
+    if len(image_paths) != len(image_tags):
+        raise ValueError("Image tags must align with image paths.")
+
+    result: dict[str, list[dict[str, object]]] = {}
+    masks_root_dir = output_dir / "masks"
+    masks_root_dir.mkdir(parents=True, exist_ok=True)
 
     unique_labels = sorted(set(int(label) for label in labels))
     for label in unique_labels:
-        members = [path for path, cluster_label in zip(image_paths, labels) if int(cluster_label) == label]
+        members = [
+            (path, image_tags[index])
+            for index, (path, cluster_label) in enumerate(zip(image_paths, labels))
+            if int(cluster_label) == label
+        ]
         if not members:
             continue
 
         if label == -1:
             noise_dir = output_dir / "noise"
             noise_dir.mkdir(parents=True, exist_ok=True)
-            for image_path in members:
-                shutil.copy2(image_path, noise_dir / image_path.name)
-                noise_images.append(image_path.name)
+            noise_payload: list[dict[str, object]] = []
+            for image_path, tags in members:
+                image_output_path = noise_dir / image_path.name
+                image_mask_dir = masks_root_dir / "noise" / image_path.stem
+                saved_masks = draw_segmentation_boundaries(image_path, image_output_path, image_mask_dir, yolo_model)
+                noise_payload.append(
+                    {
+                        "image": image_path.name,
+                        "tags": tags,
+                        "mask_dir": str(image_mask_dir.relative_to(output_dir)),
+                        "mask_files": saved_masks,
+                    }
+                )
+            result["noise"] = noise_payload
             continue
 
         cluster_dir = output_dir / f"cluster_{label}"
         cluster_dir.mkdir(parents=True, exist_ok=True)
-        for image_path in members:
-            shutil.copy2(image_path, cluster_dir / image_path.name)
+        cluster_payload: list[dict[str, object]] = []
+        for image_path, tags in members:
+            image_output_path = cluster_dir / image_path.name
+            image_mask_dir = masks_root_dir / f"cluster_{label}" / image_path.stem
+            saved_masks = draw_segmentation_boundaries(image_path, image_output_path, image_mask_dir, yolo_model)
+            cluster_payload.append(
+                {
+                    "image": image_path.name,
+                    "tags": tags,
+                    "mask_dir": str(image_mask_dir.relative_to(output_dir)),
+                    "mask_files": saved_masks,
+                }
+            )
 
-        clusters_payload.append(
-            {
-                "cluster_id": label,
-                "images": [path.name for path in members],
-            }
-        )
+        result[f"cluster_{label}"] = cluster_payload
 
-    result = {
-        "clusters": clusters_payload,
-        "noise": noise_images,
-    }
     (output_dir / "clusters.json").write_text(json.dumps(result, indent=2), encoding="utf-8")
     return result
 
@@ -1092,7 +1775,7 @@ def main() -> None:
         raise SystemExit("No supported images found in input folder.")
 
     logger.info("Found %s images", len(image_paths))
-    clip_embeddings, embedded_paths = embed_images(
+    clip_embeddings, embedded_paths, image_tags = embed_images(
         image_paths=image_paths,
         model_name=args.model,
         batch_size=max(1, args.batch_size),
@@ -1119,6 +1802,7 @@ def main() -> None:
             item_indices = [index for index, path in enumerate(item_paths) if path in path_set]
             clip_embeddings = clip_embeddings[embedded_indices]
             embedded_paths = [embedded_paths[index] for index in embedded_indices]
+            image_tags = [image_tags[index] for index in embedded_indices]
             item_features = item_features[item_indices]
 
     if embedded_paths != visual_paths:
@@ -1128,6 +1812,7 @@ def main() -> None:
         clip_embeddings = clip_embeddings[embedded_indices]
         visual_features = visual_features[visual_indices]
         embedded_paths = [embedded_paths[index] for index in embedded_indices]
+        image_tags = [image_tags[index] for index in embedded_indices]
         if item_features is not None:
             item_features = item_features[embedded_indices]
 
@@ -1166,8 +1851,12 @@ def main() -> None:
         logger=logger,
     )
 
+    yolo_model = load_yolo_model(logger)
     reset_output_dir(output_dir)
-    result = copy_clustered_images(embedded_paths, labels, output_dir)
+    for image_path, tags in zip(embedded_paths, image_tags):
+        print(f"{image_path.name} -> {tags}")
+
+    result = copy_clustered_images(embedded_paths, labels, image_tags, output_dir, yolo_model)
     write_match_scores(
         image_paths=embedded_paths,
         labels=labels,
