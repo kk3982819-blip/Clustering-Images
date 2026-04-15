@@ -1,0 +1,120 @@
+{
+  "noise": [
+    {
+      "image": "DSC04246_HDR.jpg",
+      "tags": [
+        "furnished room",
+        "white wall",
+        "floor tiles",
+        "empty room"
+      ]
+    }
+  ],
+  "cluster_0": [
+    {
+      "image": "DSC04222_HDR.jpg",
+      "tags": [
+        "floor tiles",
+        "empty room",
+        "white wall",
+        "furnished room"
+      ]
+    },
+    {
+      "image": "DSC04225_HDR.jpg",
+      "tags": [
+        "floor tiles",
+        "window",
+        "balcony",
+        "furnished room"
+      ]
+    }
+  ],
+  "cluster_1": [
+    {
+      "image": "DSC04252_HDR.jpg",
+      "tags": [
+        "floor tiles",
+        "empty room",
+        "window",
+        "white wall"
+      ]
+    },
+    {
+      "image": "DSC04255_HDR.jpg",
+      "tags": [
+        "empty room",
+        "floor tiles",
+        "white wall",
+        "furnished room"
+      ]
+    }
+  ],
+  "cluster_2": [
+    {
+      "image": "DSC04228_HDR.jpg",
+      "tags": [
+        "floor tiles",
+        "white wall",
+        "balcony",
+        "furnished room"
+      ]
+    },
+    {
+      "image": "DSC04249_HDR.jpg",
+      "tags": [
+        "floor tiles",
+        "furnished room",
+        "outdoor view",
+        "empty room"
+      ]
+    }
+  ],
+  "cluster_3": [
+    {
+      "image": "DSC04231_HDR.jpg",
+      "tags": [
+        "floor tiles",
+        "white wall",
+        "empty room",
+        "furnished room"
+      ]
+    },
+    {
+      "image": "DSC04234_HDR.jpg",
+      "tags": [
+        "floor tiles",
+        "white wall",
+        "empty room",
+        "furnished room"
+      ]
+    },
+    {
+      "image": "DSC04237_HDR.jpg",
+      "tags": [
+        "floor tiles",
+        "white wall",
+        "furnished room",
+        "empty room"
+      ]
+    },
+    {
+      "image": "DSC04240_HDR.jpg",
+      "tags": [
+        "floor tiles",
+        "white wall",
+        "furnished room",
+        "empty room"
+      ]
+    },
+    {
+      "image": "DSC04243_HDR.jpg",
+      "tags": [
+        "floor tiles",
+        "white wall",
+        "furnished room",
+        "empty room"
+      ]
+    }
+  ]
+}

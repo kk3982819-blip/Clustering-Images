@@ -6,8 +6,6 @@
 __pycache__/
 *.pyc
 
-input/
-output/
-new_output_folder/
+
 
 *.log

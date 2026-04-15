@@ -1,0 +1,176 @@
+{
+  "noise": [
+    {
+      "image": "DSC04246_HDR.jpg",
+      "tags": [
+        "furnished room",
+        "white wall",
+        "floor tiles",
+        "empty room"
+      ],
+      "mask_dir": "masks\\noise\\DSC04246_HDR",
+      "mask_files": [
+        "DSC04246_HDR_mask_000.png",
+        "DSC04246_HDR_mask_001.png",
+        "DSC04246_HDR_mask_002.png"
+      ]
+    }
+  ],
+  "cluster_0": [
+    {
+      "image": "DSC04222_HDR.jpg",
+      "tags": [
+        "floor tiles",
+        "empty room",
+        "white wall",
+        "furnished room"
+      ],
+      "mask_dir": "masks\\cluster_0\\DSC04222_HDR",
+      "mask_files": []
+    },
+    {
+      "image": "DSC04225_HDR.jpg",
+      "tags": [
+        "floor tiles",
+        "window",
+        "balcony",
+        "furnished room"
+      ],
+      "mask_dir": "masks\\cluster_0\\DSC04225_HDR",
+      "mask_files": []
+    }
+  ],
+  "cluster_1": [
+    {
+      "image": "DSC04252_HDR.jpg",
+      "tags": [
+        "floor tiles",
+        "empty room",
+        "window",
+        "white wall"
+      ],
+      "mask_dir": "masks\\cluster_1\\DSC04252_HDR",
+      "mask_files": []
+    },
+    {
+      "image": "DSC04255_HDR.jpg",
+      "tags": [
+        "empty room",
+        "floor tiles",
+        "white wall",
+        "furnished room"
+      ],
+      "mask_dir": "masks\\cluster_1\\DSC04255_HDR",
+      "mask_files": []
+    }
+  ],
+  "cluster_2": [
+    {
+      "image": "DSC04228_HDR.jpg",
+      "tags": [
+        "floor tiles",
+        "white wall",
+        "balcony",
+        "furnished room"
+      ],
+      "mask_dir": "masks\\cluster_2\\DSC04228_HDR",
+      "mask_files": [
+        "DSC04228_HDR_mask_000.png",
+        "DSC04228_HDR_mask_001.png",
+        "DSC04228_HDR_mask_002.png"
+      ]
+    },
+    {
+      "image": "DSC04249_HDR.jpg",
+      "tags": [
+        "floor tiles",
+        "furnished room",
+        "outdoor view",
+        "empty room"
+      ],
+      "mask_dir": "masks\\cluster_2\\DSC04249_HDR",
+      "mask_files": [
+        "DSC04249_HDR_mask_000.png",
+        "DSC04249_HDR_mask_001.png"
+      ]
+    }
+  ],
+  "cluster_3": [
+    {
+      "image": "DSC04231_HDR.jpg",
+      "tags": [
+        "floor tiles",
+        "white wall",
+        "empty room",
+        "furnished room"
+      ],
+      "mask_dir": "masks\\cluster_3\\DSC04231_HDR",
+      "mask_files": [
+        "DSC04231_HDR_mask_000.png",
+        "DSC04231_HDR_mask_001.png"
+      ]
+    },
+    {
+      "image": "DSC04240_HDR.jpg",
+      "tags": [
+        "floor tiles",
+        "white wall",
+        "furnished room",
+        "empty room"
+      ],
+      "mask_dir": "masks\\cluster_3\\DSC04240_HDR",
+      "mask_files": [
+        "DSC04240_HDR_mask_000.png",
+        "DSC04240_HDR_mask_001.png"
+      ]
+    },
+    {
+      "image": "DSC04243_HDR.jpg",
+      "tags": [
+        "floor tiles",
+        "white wall",
+        "furnished room",
+        "empty room"
+      ],
+      "mask_dir": "masks\\cluster_3\\DSC04243_HDR",
+      "mask_files": [
+        "DSC04243_HDR_mask_000.png",
+        "DSC04243_HDR_mask_001.png",
+        "DSC04243_HDR_mask_002.png",
+        "DSC04243_HDR_mask_003.png",
+        "DSC04243_HDR_mask_004.png"
+      ]
+    }
+  ],
+  "cluster_4": [
+    {
+      "image": "DSC04234_HDR.jpg",
+      "tags": [
+        "floor tiles",
+        "white wall",
+        "empty room",
+        "furnished room"
+      ],
+      "mask_dir": "masks\\cluster_4\\DSC04234_HDR",
+      "mask_files": [
+        "DSC04234_HDR_mask_000.png",
+        "DSC04234_HDR_mask_001.png",
+        "DSC04234_HDR_mask_002.png"
+      ]
+    },
+    {
+      "image": "DSC04237_HDR.jpg",
+      "tags": [
+        "floor tiles",
+        "white wall",
+        "furnished room",
+        "empty room"
+      ],
+      "mask_dir": "masks\\cluster_4\\DSC04237_HDR",
+      "mask_files": [
+        "DSC04237_HDR_mask_000.png",
+        "DSC04237_HDR_mask_001.png"
+      ]
+    }
+  ]
+}

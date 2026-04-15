@@ -459,7 +459,7 @@ This is not a conflict. It is a staged design where HDBSCAN handles broad discov
 ### 13.3 Default-path refinement thresholds
 
 - `view-similarity-threshold = 0.34`
-- `semantic-merge-threshold = 0.95`
+- `semantic-merge-threshold = 0.98`
 - `view-max-cluster-size = None`
 
 ### 13.4 Strict-path thresholds
