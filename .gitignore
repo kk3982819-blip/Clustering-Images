@@ -1,0 +1,13 @@
+.clip-cache/
+.sixth/
+.tmp/
+.vendor/
+.venv/
+__pycache__/
+*.pyc
+
+input/
+output/
+new_output_folder/
+
+*.log
