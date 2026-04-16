@@ -89,6 +89,8 @@ STRUCTURAL_WORLD_PROMPTS = {
     "kitchen cabinet",
     "countertop",
     "kitchen island",
+    "sky",
+    "cloud",
 }
 _WORLD_COLOR_RNG = np.random.default_rng(101)
 WORLD_PROMPT_COLORS = {
@@ -1539,6 +1541,11 @@ def generate_scene_region_candidates(image: np.ndarray) -> list[SceneRegionCandi
     cloud_mask = expanded_sky_seed & expanded_view_mask & (value > 155) & (saturation < 105) & top_region
     wall_mask = (value > 190) & (saturation < 32) & mid_upper_region & ~expanded_view_mask
 
+    # Additional cleanup for sky/cloud masks to ensure proper closed boundaries
+    sky_clean_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (max(5, width // 100), max(5, height // 100)))
+    sky_mask = cv2.morphologyEx(sky_mask.astype(np.uint8) * 255, cv2.MORPH_CLOSE, sky_clean_kernel) > 0
+    cloud_mask = cv2.morphologyEx(cloud_mask.astype(np.uint8) * 255, cv2.MORPH_CLOSE, sky_clean_kernel) > 0
+
     candidates: list[SceneRegionCandidate] = []
     candidates.extend(
         mask_to_scene_candidates(
@@ -1677,12 +1684,20 @@ def detect_scene_regions(
             prompt_indices = scene_labeler.label_to_prompt_indices[label]
             score = float(row[prompt_indices].max().item())
             if score >= SCENE_LABEL_THRESHOLDS[label] and area_ratio <= SCENE_LABEL_MAX_AREA_RATIO[label]:
+                boundary = candidate.boundary
+                # Apply simplification for sky/cloud to get 'proper boundary lines'
+                if label in SCENE_OUTDOOR_LABELS and len(boundary) > 4:
+                    pts = np.array(boundary, dtype=np.int32).reshape((-1, 1, 2))
+                    epsilon = 0.0035 * cv2.arcLength(pts, True)
+                    simplified = cv2.approxPolyDP(pts, epsilon, True)
+                    boundary = tuple((int(p[0][0]), int(p[0][1])) for p in simplified)
+
                 label_detections.append(
                     SceneLabelDetection(
                         label=label,
                         score=score,
                         box=candidate.box,
-                        boundary=candidate.boundary,
+                        boundary=boundary,
                     )
                 )
 
@@ -1882,6 +1897,8 @@ def detect_open_vocabulary_annotations(
             break
 
         mask_binary = (mask > 0.5).astype(np.uint8) * 255
+        # Smoothing pass to remove jagged edges
+        mask_binary = cv2.medianBlur(mask_binary, 7)
         if mask_binary.shape != (rendered_height, rendered_width):
             mask_binary = cv2.resize(mask_binary, (rendered_width, rendered_height), interpolation=cv2.INTER_NEAREST)
 
@@ -1902,7 +1919,7 @@ def detect_open_vocabulary_annotations(
             largest_contour = max(contours, key=cv2.contourArea)
             prompt_name = WORLD_PROMPTS[int(filtered_class_ids[index])]
             if prompt_name in STRUCTURAL_WORLD_PROMPTS:
-                epsilon = 0.005 * cv2.arcLength(largest_contour, True)
+                epsilon = 0.015 * cv2.arcLength(largest_contour, True)  # More aggressive simplification for smoother lines
                 largest_contour = cv2.approxPolyDP(largest_contour, epsilon, True)
             scaled_boundary = contour_to_boundary(largest_contour, rendered_width, rendered_height)
         else:
