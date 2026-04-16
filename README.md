@@ -23,12 +23,13 @@ The current pipeline is designed for cases like:
 - merge-back of over-split subclusters using CLIP similarity
 - noise handling
 - JSON output plus clustered image folders
+- optional post-cluster open-vocabulary detection with YOLO-World Large
+- SAM-based mask extraction and polygon boundaries for clustered images
 
 ## What Is Not Implemented Yet
 
 This project does not currently use:
 
-- object detection such as YOLO, DETR, or Faster R-CNN
 - explicit scene classifiers such as Places365
 - object co-occurrence logic such as `bed + side table`
 - occupancy detection such as empty vs furnished as a dedicated model
@@ -40,11 +41,12 @@ That means the system is currently strongest at:
 - semantic grouping
 - viewpoint-aware grouping
 - real-estate photo clustering
+- cluster-first room annotation with optional open-vocabulary detection
 
 and weaker at:
 
-- explicit room labeling from detected objects
 - separating visually similar rooms with different hidden semantics
+- fully reliable object reasoning in cluttered or ambiguous scenes
 
 ## How The Pipeline Works
 
@@ -222,8 +224,8 @@ This is stricter than the default mode because two images are only allowed to st
 
 Important:
 
-- this is still not full object detection
-- it is a stronger CLIP-based proxy for item similarity
+- this strict mode is still not object detection
+- it is a stronger CLIP-based proxy for item similarity before the optional post-cluster detector runs
 
 ### 11. Write output
 
@@ -237,6 +239,7 @@ and writes:
 
 - `output/clusters.json`
 - `output/match_scores.json`
+- `output/masks/...` when post-cluster detection is enabled
 
 See [copy_clustered_images](</c:/Users/Mohammed kaif M/OneDrive/Desktop/clustering images/cluster_images.py:914>).
 
