@@ -28,13 +28,16 @@ SUPPORTED_EXTENSIONS = {".jpg", ".jpeg", ".png"}
 ORB_EXTRACTOR = cv2.ORB_create(1200)
 ORB_MATCHER = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True)
 WORLD_DETECTOR_MODEL_NAME = "yolov8l-world.pt"
+WORLD_FALLBACK_MODEL_NAME = "yolov8x-seg.pt"
 SAM_MODEL_NAME = "sam_b.pt"
 WORLD_DETECTION_CONFIDENCE = 0.01
+WORLD_FALLBACK_CONFIDENCE = 0.22
 WORLD_DETECTION_IOU = 0.75
 WORLD_DUPLICATE_IOU_THRESHOLD = 0.65
 WORLD_MAX_BOX_AREA_RATIO = 0.92
 WORLD_MAX_IMAGE_DIM = 1600
 _WORLD_DETECTOR_MODEL: object | None = None
+_FALLBACK_DETECTOR_MODEL: object | None = None
 _SAM_MODEL: object | None = None
 WORLD_PROMPTS = [
     "ceiling",
@@ -231,6 +234,7 @@ class ImageAnnotation:
 @dataclass(frozen=True)
 class OpenVocabularyRuntime:
     detector: object
+    fallback_detector: object | None
     segmenter: object
 
 
@@ -369,8 +373,35 @@ def parse_args() -> argparse.Namespace:
         default="world-sam",
         help="Optional detection stage to run after clusters are formed.",
     )
+    parser.add_argument("--flag-items", action="store_true", help="Generate image_flags.json for כל image.")
+    parser.add_argument("--annotate-flagged-images", action="store_true", help="Draw boundaries of flagged items on output images.")
+    parser.add_argument("--validate-setup", action="store_true", help="Test if all AI models load correctly and then exit.")
     parser.add_argument("--device", choices=["auto", "cpu", "cuda"], default="auto", help="Torch device.")
     return parser.parse_args()
+
+
+def validate_setup(logger: logging.Logger) -> None:
+    logger.info("--- VALIDATING AI SETUP ---")
+    try:
+        from ultralytics import YOLO, SAM
+        logger.info("[OK] ultralytics package")
+    except ImportError:
+        logger.error("[FAIL] ultralytics package missing")
+        return
+
+    try:
+        load_open_vocabulary_runtime(logger)
+        logger.info("[OK] YOLO-World Large + SAM + Fallback models")
+    except Exception as exc:
+        logger.error("[FAIL] Open-Vocabulary Runtime: %s", exc)
+
+    try:
+        load_scene_labeler_runtime(model_name="ViT-B/32", device="cpu", cache_dir=Path(".clip-cache"), logger=logger)
+        logger.info("[OK] CLIP + Scene Labeler")
+    except Exception as exc:
+        logger.error("[FAIL] Scene Labeler: %s", exc)
+
+    logger.info("--- VALIDATION COMPLETE ---")
 
 
 def setup_logging() -> logging.Logger:
@@ -1230,7 +1261,7 @@ def reset_output_dir(output_dir: Path) -> None:
 
 
 def load_open_vocabulary_runtime(logger: logging.Logger) -> OpenVocabularyRuntime:
-    global _WORLD_DETECTOR_MODEL, _SAM_MODEL
+    global _WORLD_DETECTOR_MODEL, _FALLBACK_DETECTOR_MODEL, _SAM_MODEL
 
     if YOLO is None or SAM is None:
         raise RuntimeError("Ultralytics is not installed. Install it with `pip install ultralytics`.")
@@ -1242,7 +1273,17 @@ def load_open_vocabulary_runtime(logger: logging.Logger) -> OpenVocabularyRuntim
             _WORLD_DETECTOR_MODEL.set_classes(WORLD_PROMPTS)
         except Exception as exc:
             raise RuntimeError(
-                "Could not load YOLO-World Large from `yolov8l-world.pt`. Place the weight in the working directory "
+                f"Could not load YOLO-World Large from `{WORLD_DETECTOR_MODEL_NAME}`. Place the weight in the working directory "
+                "or let Ultralytics download it once, then rerun the clustering command."
+            ) from exc
+
+    if _FALLBACK_DETECTOR_MODEL is None:
+        logger.info("Loading fallback discovery detector %s", WORLD_FALLBACK_MODEL_NAME)
+        try:
+            _FALLBACK_DETECTOR_MODEL = YOLO(WORLD_FALLBACK_MODEL_NAME)
+        except Exception as exc:
+            raise RuntimeError(
+                f"Could not load fallback YOLO model from `{WORLD_FALLBACK_MODEL_NAME}`. Place the weight in the working directory "
                 "or let Ultralytics download it once, then rerun the clustering command."
             ) from exc
 
@@ -1252,11 +1293,15 @@ def load_open_vocabulary_runtime(logger: logging.Logger) -> OpenVocabularyRuntim
             _SAM_MODEL = SAM(SAM_MODEL_NAME)
         except Exception as exc:
             raise RuntimeError(
-                "Could not load Segment Anything Base from `sam_b.pt`. Place the weight in the working directory "
+                f"Could not load Segment Anything Base from `{SAM_MODEL_NAME}`. Place the weight in the working directory "
                 "or let Ultralytics download it once, then rerun the clustering command."
             ) from exc
 
-    return OpenVocabularyRuntime(detector=_WORLD_DETECTOR_MODEL, segmenter=_SAM_MODEL)
+    return OpenVocabularyRuntime(
+        detector=_WORLD_DETECTOR_MODEL,
+        fallback_detector=_FALLBACK_DETECTOR_MODEL,
+        segmenter=_SAM_MODEL,
+    )
 
 
 def world_prompt_display_name(prompt_name: str, box: tuple[int, int, int, int], image_width: int) -> str:
@@ -1409,7 +1454,7 @@ def normalize_boundary_points(
 
 def contour_to_boundary(contour: np.ndarray, width: int, height: int) -> Boundary:
     perimeter = float(cv2.arcLength(contour, True))
-    epsilon = max(2.0, perimeter * 0.01)
+    epsilon = max(1.5, perimeter * 0.007)
     approx = cv2.approxPolyDP(contour, epsilon, True)
     polygon = approx.reshape(-1, 2) if len(approx) >= 3 else contour.reshape(-1, 2)
     boundary = normalize_boundary_points(polygon, width, height)
@@ -1688,7 +1733,7 @@ def detect_scene_regions(
                 # Apply simplification for sky/cloud to get 'proper boundary lines'
                 if label in SCENE_OUTDOOR_LABELS and len(boundary) > 4:
                     pts = np.array(boundary, dtype=np.int32).reshape((-1, 1, 2))
-                    epsilon = 0.0035 * cv2.arcLength(pts, True)
+                    epsilon = 0.004 * cv2.arcLength(pts, True)
                     simplified = cv2.approxPolyDP(pts, epsilon, True)
                     boundary = tuple((int(p[0][0]), int(p[0][1])) for p in simplified)
 
@@ -1860,49 +1905,98 @@ def detect_open_vocabulary_annotations(
             interpolation=cv2.INTER_AREA,
         )
 
-    detection_result = detection_runtime.detector(
+    # 1. Primary Prompted Pass
+    world_result = detection_runtime.detector(
         working_image,
         conf=WORLD_DETECTION_CONFIDENCE,
         iou=WORLD_DETECTION_IOU,
         verbose=False,
     )[0]
-    if getattr(detection_result, "boxes", None) is None or len(detection_result.boxes) == 0:
+
+    all_boxes = []
+    all_class_ids = []
+    all_scores = []
+    all_sources = []
+    all_names = []
+
+    if getattr(world_result, "boxes", None) is not None and len(world_result.boxes) > 0:
+        raw_boxes = world_result.boxes.xyxy.cpu().numpy()
+        raw_class_ids = world_result.boxes.cls.cpu().numpy().astype(np.int32, copy=False)
+        raw_confidence_scores = world_result.boxes.conf.cpu().numpy().astype(np.float32, copy=False)
+        f_boxes, f_class_ids, f_scores = filter_world_detections(
+            boxes=raw_boxes,
+            class_ids=raw_class_ids,
+            confidence_scores=raw_confidence_scores,
+            image_area=float(working_image.shape[0] * working_image.shape[1]),
+        )
+        for i in range(len(f_boxes)):
+            all_boxes.append(f_boxes[i])
+            all_class_ids.append(int(f_class_ids[i]))
+            all_scores.append(float(f_scores[i]))
+            all_sources.append("world-sam")
+            all_names.append(WORLD_PROMPTS[int(f_class_ids[i])])
+
+    # 2. Discovery Fallback Pass (if model is available)
+    if detection_runtime.fallback_detector is not None:
+        fallback_result = detection_runtime.fallback_detector(
+            working_image,
+            conf=WORLD_FALLBACK_CONFIDENCE,
+            verbose=False,
+        )[0]
+        if getattr(fallback_result, "boxes", None) is not None and len(fallback_result.boxes) > 0:
+            fb_boxes = fallback_result.boxes.xyxy.cpu().numpy()
+            fb_class_ids = fallback_result.boxes.cls.cpu().numpy().astype(np.int32, copy=False)
+            fb_scores = fallback_result.boxes.conf.cpu().numpy().astype(np.float32, copy=False)
+            fb_names = fallback_result.names
+
+            for i in range(len(fb_boxes)):
+                candidate_box = fb_boxes[i]
+                
+                # Deduplication: If this object overlaps significantly with any prompted object, skip it.
+                is_duplicate = False
+                for j in range(len(all_boxes)):
+                    if all_sources[j] == "world-sam":
+                        if compute_box_iou(candidate_box, all_boxes[j]) > 0.40:
+                            is_duplicate = True
+                            break
+                
+                if not is_duplicate:
+                    all_boxes.append(candidate_box)
+                    all_class_ids.append(int(fb_class_ids[i]))
+                    all_scores.append(float(fb_scores[i]))
+                    all_sources.append("discovery")
+                    all_names.append(fb_names[int(fb_class_ids[i])])
+
+    if not all_boxes:
         return [], []
 
-    raw_boxes = detection_result.boxes.xyxy.cpu().numpy()
-    raw_class_ids = detection_result.boxes.cls.cpu().numpy().astype(np.int32, copy=False)
-    raw_confidence_scores = detection_result.boxes.conf.cpu().numpy().astype(np.float32, copy=False)
-    filtered_boxes, filtered_class_ids, filtered_scores = filter_world_detections(
-        boxes=raw_boxes,
-        class_ids=raw_class_ids,
-        confidence_scores=raw_confidence_scores,
-        image_area=float(working_image.shape[0] * working_image.shape[1]),
-    )
-    if len(filtered_boxes) == 0:
-        return [], []
-
-    segmentation_result = detection_runtime.segmenter(working_image, bboxes=filtered_boxes, verbose=False)[0]
+    all_boxes_np = np.asarray(all_boxes, dtype=np.float32)
+    segmentation_result = detection_runtime.segmenter(working_image, bboxes=all_boxes_np, verbose=False)[0]
     if segmentation_result.masks is None:
         return [], []
 
     segmentation_boxes: np.ndarray | None = None
-    if getattr(segmentation_result, "boxes", None) is not None and len(segmentation_result.boxes) == len(filtered_boxes):
+    if getattr(segmentation_result, "boxes", None) is not None and len(segmentation_result.boxes) == len(all_boxes):
         segmentation_boxes = segmentation_result.boxes.xyxy.cpu().numpy()
 
     resized_masks: list[np.ndarray] = []
     annotations: list[ImageAnnotation] = []
     rendered_height, rendered_width = working_image.shape[:2]
+    
     for index, mask in enumerate(segmentation_result.masks.data.cpu().numpy()):
-        if index >= len(filtered_boxes):
+        if index >= len(all_boxes):
             break
 
         mask_binary = (mask > 0.5).astype(np.uint8) * 255
-        # Smoothing pass to remove jagged edges
-        mask_binary = cv2.medianBlur(mask_binary, 7)
+        
+        # Surgical cleaning: remove small noise islands without ruining corners
+        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
+        mask_binary = cv2.morphologyEx(mask_binary, cv2.MORPH_OPEN, kernel)
+        mask_binary = cv2.medianBlur(mask_binary, 3)
         if mask_binary.shape != (rendered_height, rendered_width):
             mask_binary = cv2.resize(mask_binary, (rendered_width, rendered_height), interpolation=cv2.INTER_NEAREST)
 
-        box_values = segmentation_boxes[index] if segmentation_boxes is not None else filtered_boxes[index]
+        box_values = segmentation_boxes[index] if segmentation_boxes is not None else all_boxes[index]
         scaled_box = clamp_box(
             int(round(box_values[0])),
             int(round(box_values[1])),
@@ -1917,9 +2011,9 @@ def detect_open_vocabulary_annotations(
         contours, _ = cv2.findContours(mask_binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         if contours:
             largest_contour = max(contours, key=cv2.contourArea)
-            prompt_name = WORLD_PROMPTS[int(filtered_class_ids[index])]
-            if prompt_name in STRUCTURAL_WORLD_PROMPTS:
-                epsilon = 0.015 * cv2.arcLength(largest_contour, True)  # More aggressive simplification for smoother lines
+            # Apply smoothing only to structural items from the prompt set
+            if all_sources[index] == "world-sam" and all_names[index] in STRUCTURAL_WORLD_PROMPTS:
+                epsilon = 0.008 * cv2.arcLength(largest_contour, True)
                 largest_contour = cv2.approxPolyDP(largest_contour, epsilon, True)
             scaled_boundary = contour_to_boundary(largest_contour, rendered_width, rendered_height)
         else:
@@ -1960,14 +2054,19 @@ def detect_open_vocabulary_annotations(
             if boundary_box is not None:
                 final_box = boundary_box
 
-        prompt_name = WORLD_PROMPTS[int(filtered_class_ids[index])]
-        display_label = world_prompt_display_name(prompt_name, final_box, original_width)
+        # Display labeling style
+        if all_sources[index] == "world-sam":
+            display_label = world_prompt_display_name(all_names[index], final_box, original_width)
+        else:
+            # For discovery items, just capitalize the COCO name
+            display_label = all_names[index].title()
+
         annotations.append(
             ImageAnnotation(
-                source="world-sam",
+                source=all_sources[index],
                 box=final_box,
                 boundary=final_boundary,
-                labels=((display_label, float(filtered_scores[index])),),
+                labels=((display_label, float(all_scores[index])),),
             )
         )
         resized_masks.append(mask_binary)
@@ -2048,11 +2147,16 @@ def copy_clustered_images(
             noise_dir.mkdir(parents=True, exist_ok=True)
             noise_payload: list[dict[str, object]] = []
             for image_path, tags in members:
+                # ── Step 1: Save CLEAN raw image ────────────────────────
                 image_output_path = noise_dir / image_path.name
+                shutil.copy2(image_path, image_output_path)
+                
+                # ── Step 2: Save LABELED debug version ──────────────────
+                labeled_output_path = noise_dir / f"{image_path.stem}_labeled.jpg"
                 image_mask_dir = masks_root_dir / "noise" / image_path.stem if masks_root_dir is not None else None
                 saved_masks, serialized_annotations = annotate_clustered_image(
                     image_path=image_path,
-                    output_path=image_output_path,
+                    output_path=labeled_output_path,
                     mask_output_dir=image_mask_dir,
                     detection_runtime=detection_runtime,
                     scene_labeler=scene_labeler,
@@ -2073,11 +2177,16 @@ def copy_clustered_images(
         cluster_dir.mkdir(parents=True, exist_ok=True)
         cluster_payload: list[dict[str, object]] = []
         for image_path, tags in members:
+            # ── Step 1: Save CLEAN raw image ────────────────────────
             image_output_path = cluster_dir / image_path.name
+            shutil.copy2(image_path, image_output_path)
+            
+            # ── Step 2: Save LABELED debug version ──────────────────
+            labeled_output_path = cluster_dir / f"{image_path.stem}_labeled.jpg"
             image_mask_dir = masks_root_dir / f"cluster_{label}" / image_path.stem if masks_root_dir is not None else None
             saved_masks, serialized_annotations = annotate_clustered_image(
                 image_path=image_path,
-                output_path=image_output_path,
+                output_path=labeled_output_path,
                 mask_output_dir=image_mask_dir,
                 detection_runtime=detection_runtime,
                 scene_labeler=scene_labeler,
@@ -2130,6 +2239,10 @@ def write_match_scores(
 def main() -> None:
     args = parse_args()
     logger = setup_logging()
+
+    if args.validate_setup:
+        validate_setup(logger)
+        return
 
     input_dir = Path(args.input).resolve()
     output_dir = Path(args.output).resolve()

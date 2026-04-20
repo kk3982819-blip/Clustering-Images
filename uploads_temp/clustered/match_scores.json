@@ -9,7 +9,7 @@
           "image": "DSC04249_HDR.jpg",
           "match_percent": 71.28,
           "same_cluster": false,
-          "semantic_percent": 90.9,
+          "semantic_percent": 90.89,
           "hybrid_percent": 77.66,
           "viewpoint_percent": 49.79
         },
@@ -17,13 +17,13 @@
           "image": "DSC04255_HDR.jpg",
           "match_percent": 71.0,
           "same_cluster": false,
-          "semantic_percent": 93.73,
-          "hybrid_percent": 81.75,
+          "semantic_percent": 93.72,
+          "hybrid_percent": 81.74,
           "viewpoint_percent": 39.95
         },
         {
           "image": "DSC04252_HDR.jpg",
-          "match_percent": 70.93,
+          "match_percent": 70.92,
           "same_cluster": false,
           "semantic_percent": 95.57,
           "hybrid_percent": 78.26,
@@ -49,7 +49,7 @@
           "image": "DSC04234_HDR.jpg",
           "match_percent": 64.47,
           "same_cluster": false,
-          "semantic_percent": 87.45,
+          "semantic_percent": 87.44,
           "hybrid_percent": 74.12,
           "viewpoint_percent": 35.29
         },
@@ -63,18 +63,18 @@
         },
         {
           "image": "DSC04240_HDR.jpg",
-          "match_percent": 59.65,
+          "match_percent": 59.64,
           "same_cluster": false,
-          "semantic_percent": 84.97,
-          "hybrid_percent": 67.24,
+          "semantic_percent": 84.96,
+          "hybrid_percent": 67.23,
           "viewpoint_percent": 33.06
         },
         {
           "image": "DSC04243_HDR.jpg",
           "match_percent": 59.48,
           "same_cluster": false,
-          "semantic_percent": 86.29,
-          "hybrid_percent": 67.46,
+          "semantic_percent": 86.28,
+          "hybrid_percent": 67.45,
           "viewpoint_percent": 31.45
         },
         {
@@ -87,10 +87,10 @@
         },
         {
           "image": "DSC04246_HDR.jpg",
-          "match_percent": 53.63,
+          "match_percent": 53.62,
           "same_cluster": false,
-          "semantic_percent": 83.35,
-          "hybrid_percent": 59.72,
+          "semantic_percent": 83.33,
+          "hybrid_percent": 59.71,
           "viewpoint_percent": 27.6
         }
       ]
@@ -101,7 +101,7 @@
       "matches": [
         {
           "image": "DSC04255_HDR.jpg",
-          "match_percent": 70.81,
+          "match_percent": 70.82,
           "same_cluster": false,
           "semantic_percent": 91.77,
           "hybrid_percent": 78.57,
@@ -117,33 +117,33 @@
         },
         {
           "image": "DSC04252_HDR.jpg",
-          "match_percent": 69.58,
+          "match_percent": 69.59,
           "same_cluster": false,
-          "semantic_percent": 95.08,
-          "hybrid_percent": 75.8,
+          "semantic_percent": 95.09,
+          "hybrid_percent": 75.81,
           "viewpoint_percent": 45.44
         },
         {
           "image": "DSC04249_HDR.jpg",
-          "match_percent": 65.22,
+          "match_percent": 65.23,
           "same_cluster": false,
-          "semantic_percent": 90.96,
-          "hybrid_percent": 70.13,
+          "semantic_percent": 90.97,
+          "hybrid_percent": 70.14,
           "viewpoint_percent": 43.36
         },
         {
           "image": "DSC04228_HDR.jpg",
           "match_percent": 63.9,
           "same_cluster": false,
-          "semantic_percent": 92.24,
-          "hybrid_percent": 70.03,
+          "semantic_percent": 92.26,
+          "hybrid_percent": 70.04,
           "viewpoint_percent": 38.48
         },
         {
           "image": "DSC04243_HDR.jpg",
-          "match_percent": 62.4,
+          "match_percent": 62.41,
           "same_cluster": false,
-          "semantic_percent": 85.24,
+          "semantic_percent": 85.25,
           "hybrid_percent": 67.83,
           "viewpoint_percent": 41.04
         },
@@ -151,32 +151,32 @@
           "image": "DSC04231_HDR.jpg",
           "match_percent": 62.1,
           "same_cluster": false,
-          "semantic_percent": 88.15,
-          "hybrid_percent": 69.59,
+          "semantic_percent": 88.16,
+          "hybrid_percent": 69.6,
           "viewpoint_percent": 35.33
         },
         {
           "image": "DSC04234_HDR.jpg",
-          "match_percent": 61.61,
+          "match_percent": 61.62,
           "same_cluster": false,
-          "semantic_percent": 84.53,
-          "hybrid_percent": 70.93,
+          "semantic_percent": 84.55,
+          "hybrid_percent": 70.94,
           "viewpoint_percent": 33.05
         },
         {
           "image": "DSC04237_HDR.jpg",
           "match_percent": 60.45,
           "same_cluster": false,
-          "semantic_percent": 84.37,
-          "hybrid_percent": 68.36,
+          "semantic_percent": 84.38,
+          "hybrid_percent": 68.37,
           "viewpoint_percent": 33.98
         },
         {
           "image": "DSC04240_HDR.jpg",
-          "match_percent": 58.16,
+          "match_percent": 58.17,
           "same_cluster": false,
-          "semantic_percent": 83.62,
-          "hybrid_percent": 64.25,
+          "semantic_percent": 83.64,
+          "hybrid_percent": 64.26,
           "viewpoint_percent": 34.28
         },
         {
@@ -197,16 +197,16 @@
           "image": "DSC04252_HDR.jpg",
           "match_percent": 68.08,
           "same_cluster": false,
-          "semantic_percent": 91.76,
-          "hybrid_percent": 74.39,
+          "semantic_percent": 91.77,
+          "hybrid_percent": 74.4,
           "viewpoint_percent": 44.66
         },
         {
           "image": "DSC04255_HDR.jpg",
           "match_percent": 67.61,
           "same_cluster": false,
-          "semantic_percent": 88.76,
-          "hybrid_percent": 72.8,
+          "semantic_percent": 88.75,
+          "hybrid_percent": 72.79,
           "viewpoint_percent": 47.53
         },
         {
@@ -221,7 +221,7 @@
           "image": "DSC04249_HDR.jpg",
           "match_percent": 65.03,
           "same_cluster": true,
-          "semantic_percent": 93.71,
+          "semantic_percent": 93.72,
           "hybrid_percent": 73.25,
           "viewpoint_percent": 35.63
         },
@@ -229,37 +229,37 @@
           "image": "DSC04225_HDR.jpg",
           "match_percent": 63.9,
           "same_cluster": false,
-          "semantic_percent": 92.24,
-          "hybrid_percent": 70.03,
+          "semantic_percent": 92.26,
+          "hybrid_percent": 70.04,
           "viewpoint_percent": 38.48
         },
         {
           "image": "DSC04237_HDR.jpg",
-          "match_percent": 62.04,
+          "match_percent": 62.03,
           "same_cluster": false,
-          "semantic_percent": 89.87,
-          "hybrid_percent": 70.94,
+          "semantic_percent": 89.85,
+          "hybrid_percent": 70.93,
           "viewpoint_percent": 31.82
         },
         {
           "image": "DSC04243_HDR.jpg",
-          "match_percent": 60.53,
+          "match_percent": 60.52,
           "same_cluster": false,
-          "semantic_percent": 90.34,
-          "hybrid_percent": 69.12,
+          "semantic_percent": 90.32,
+          "hybrid_percent": 69.11,
           "viewpoint_percent": 29.87
         },
         {
           "image": "DSC04240_HDR.jpg",
           "match_percent": 60.46,
           "same_cluster": false,
-          "semantic_percent": 90.23,
+          "semantic_percent": 90.22,
           "hybrid_percent": 69.38,
           "viewpoint_percent": 29.22
         },
         {
           "image": "DSC04234_HDR.jpg",
-          "match_percent": 60.0,
+          "match_percent": 59.99,
           "same_cluster": false,
           "semantic_percent": 90.26,
           "hybrid_percent": 69.97,
@@ -270,15 +270,15 @@
           "match_percent": 58.72,
           "same_cluster": false,
           "semantic_percent": 93.8,
-          "hybrid_percent": 68.17,
+          "hybrid_percent": 68.16,
           "viewpoint_percent": 23.88
         },
         {
           "image": "DSC04246_HDR.jpg",
-          "match_percent": 50.45,
+          "match_percent": 50.44,
           "same_cluster": false,
-          "semantic_percent": 85.13,
-          "hybrid_percent": 58.04,
+          "semantic_percent": 85.12,
+          "hybrid_percent": 58.03,
           "viewpoint_percent": 19.19
         }
       ]
@@ -299,7 +299,7 @@
           "image": "DSC04240_HDR.jpg",
           "match_percent": 70.6,
           "same_cluster": true,
-          "semantic_percent": 94.62,
+          "semantic_percent": 94.61,
           "hybrid_percent": 77.75,
           "viewpoint_percent": 45.48
         },
@@ -316,7 +316,7 @@
           "match_percent": 65.86,
           "same_cluster": false,
           "semantic_percent": 90.78,
-          "hybrid_percent": 73.39,
+          "hybrid_percent": 73.4,
           "viewpoint_percent": 39.6
         },
         {
@@ -329,9 +329,9 @@
         },
         {
           "image": "DSC04249_HDR.jpg",
-          "match_percent": 63.3,
+          "match_percent": 63.31,
           "same_cluster": false,
-          "semantic_percent": 91.56,
+          "semantic_percent": 91.57,
           "hybrid_percent": 71.43,
           "viewpoint_percent": 34.28
         },
@@ -339,15 +339,15 @@
           "image": "DSC04225_HDR.jpg",
           "match_percent": 62.1,
           "same_cluster": false,
-          "semantic_percent": 88.15,
-          "hybrid_percent": 69.59,
+          "semantic_percent": 88.16,
+          "hybrid_percent": 69.6,
           "viewpoint_percent": 35.33
         },
         {
           "image": "DSC04237_HDR.jpg",
-          "match_percent": 60.87,
+          "match_percent": 60.86,
           "same_cluster": false,
-          "semantic_percent": 92.03,
+          "semantic_percent": 92.02,
           "hybrid_percent": 67.32,
           "viewpoint_percent": 33.46
         },
@@ -356,7 +356,7 @@
           "match_percent": 58.72,
           "same_cluster": false,
           "semantic_percent": 93.8,
-          "hybrid_percent": 68.17,
+          "hybrid_percent": 68.16,
           "viewpoint_percent": 23.88
         },
         {
@@ -364,7 +364,7 @@
           "match_percent": 58.25,
           "same_cluster": false,
           "semantic_percent": 88.76,
-          "hybrid_percent": 66.8,
+          "hybrid_percent": 66.79,
           "viewpoint_percent": 27.34
         },
         {
@@ -393,13 +393,13 @@
           "image": "DSC04222_HDR.jpg",
           "match_percent": 64.47,
           "same_cluster": false,
-          "semantic_percent": 87.45,
+          "semantic_percent": 87.44,
           "hybrid_percent": 74.12,
           "viewpoint_percent": 35.29
         },
         {
           "image": "DSC04240_HDR.jpg",
-          "match_percent": 63.0,
+          "match_percent": 62.99,
           "same_cluster": false,
           "semantic_percent": 96.38,
           "hybrid_percent": 72.03,
@@ -407,31 +407,31 @@
         },
         {
           "image": "DSC04249_HDR.jpg",
-          "match_percent": 62.92,
+          "match_percent": 62.93,
           "same_cluster": false,
-          "semantic_percent": 89.69,
-          "hybrid_percent": 70.58,
+          "semantic_percent": 89.7,
+          "hybrid_percent": 70.59,
           "viewpoint_percent": 35.51
         },
         {
           "image": "DSC04225_HDR.jpg",
-          "match_percent": 61.61,
+          "match_percent": 61.62,
           "same_cluster": false,
-          "semantic_percent": 84.53,
-          "hybrid_percent": 70.93,
+          "semantic_percent": 84.55,
+          "hybrid_percent": 70.94,
           "viewpoint_percent": 33.05
         },
         {
           "image": "DSC04255_HDR.jpg",
-          "match_percent": 60.01,
+          "match_percent": 60.02,
           "same_cluster": false,
-          "semantic_percent": 87.49,
-          "hybrid_percent": 68.57,
+          "semantic_percent": 87.5,
+          "hybrid_percent": 68.58,
           "viewpoint_percent": 30.58
         },
         {
           "image": "DSC04228_HDR.jpg",
-          "match_percent": 60.0,
+          "match_percent": 59.99,
           "same_cluster": false,
           "semantic_percent": 90.26,
           "hybrid_percent": 69.97,
@@ -441,15 +441,15 @@
           "image": "DSC04243_HDR.jpg",
           "match_percent": 59.96,
           "same_cluster": false,
-          "semantic_percent": 96.39,
-          "hybrid_percent": 69.18,
+          "semantic_percent": 96.4,
+          "hybrid_percent": 69.19,
           "viewpoint_percent": 24.82
         },
         {
           "image": "DSC04252_HDR.jpg",
           "match_percent": 58.41,
           "same_cluster": false,
-          "semantic_percent": 87.56,
+          "semantic_percent": 87.57,
           "hybrid_percent": 66.53,
           "viewpoint_percent": 28.95
         },
@@ -465,7 +465,7 @@
           "image": "DSC04246_HDR.jpg",
           "match_percent": 52.36,
           "same_cluster": false,
-          "semantic_percent": 92.52,
+          "semantic_percent": 92.53,
           "hybrid_percent": 60.5,
           "viewpoint_percent": 17.37
         }
@@ -485,25 +485,25 @@
         },
         {
           "image": "DSC04228_HDR.jpg",
-          "match_percent": 62.04,
+          "match_percent": 62.03,
           "same_cluster": false,
-          "semantic_percent": 89.87,
-          "hybrid_percent": 70.94,
+          "semantic_percent": 89.85,
+          "hybrid_percent": 70.93,
           "viewpoint_percent": 31.82
         },
         {
           "image": "DSC04240_HDR.jpg",
           "match_percent": 61.71,
           "same_cluster": false,
-          "semantic_percent": 95.91,
+          "semantic_percent": 95.89,
           "hybrid_percent": 67.7,
           "viewpoint_percent": 33.64
         },
         {
           "image": "DSC04231_HDR.jpg",
-          "match_percent": 60.87,
+          "match_percent": 60.86,
           "same_cluster": false,
-          "semantic_percent": 92.03,
+          "semantic_percent": 92.02,
           "hybrid_percent": 67.32,
           "viewpoint_percent": 33.46
         },
@@ -511,16 +511,16 @@
           "image": "DSC04225_HDR.jpg",
           "match_percent": 60.45,
           "same_cluster": false,
-          "semantic_percent": 84.37,
-          "hybrid_percent": 68.36,
+          "semantic_percent": 84.38,
+          "hybrid_percent": 68.37,
           "viewpoint_percent": 33.98
         },
         {
           "image": "DSC04249_HDR.jpg",
-          "match_percent": 58.26,
+          "match_percent": 58.25,
           "same_cluster": false,
-          "semantic_percent": 89.18,
-          "hybrid_percent": 65.28,
+          "semantic_percent": 89.17,
+          "hybrid_percent": 65.27,
           "viewpoint_percent": 29.93
         },
         {
@@ -541,17 +541,17 @@
         },
         {
           "image": "DSC04246_HDR.jpg",
-          "match_percent": 55.79,
+          "match_percent": 55.78,
           "same_cluster": false,
-          "semantic_percent": 93.72,
-          "hybrid_percent": 63.81,
+          "semantic_percent": 93.7,
+          "hybrid_percent": 63.8,
           "viewpoint_percent": 22.13
         },
         {
           "image": "DSC04243_HDR.jpg",
-          "match_percent": 55.73,
+          "match_percent": 55.72,
           "same_cluster": false,
-          "semantic_percent": 96.66,
+          "semantic_percent": 96.64,
           "hybrid_percent": 64.7,
           "viewpoint_percent": 18.8
         },
@@ -573,7 +573,7 @@
           "image": "DSC04231_HDR.jpg",
           "match_percent": 70.6,
           "same_cluster": true,
-          "semantic_percent": 94.62,
+          "semantic_percent": 94.61,
           "hybrid_percent": 77.75,
           "viewpoint_percent": 45.48
         },
@@ -595,7 +595,7 @@
         },
         {
           "image": "DSC04234_HDR.jpg",
-          "match_percent": 63.0,
+          "match_percent": 62.99,
           "same_cluster": false,
           "semantic_percent": 96.38,
           "hybrid_percent": 72.03,
@@ -603,10 +603,10 @@
         },
         {
           "image": "DSC04249_HDR.jpg",
-          "match_percent": 62.72,
+          "match_percent": 62.73,
           "same_cluster": false,
-          "semantic_percent": 90.08,
-          "hybrid_percent": 70.24,
+          "semantic_percent": 90.09,
+          "hybrid_percent": 70.25,
           "viewpoint_percent": 35.26
         },
         {
@@ -621,7 +621,7 @@
           "image": "DSC04237_HDR.jpg",
           "match_percent": 61.71,
           "same_cluster": false,
-          "semantic_percent": 95.91,
+          "semantic_percent": 95.89,
           "hybrid_percent": 67.7,
           "viewpoint_percent": 33.64
         },
@@ -629,24 +629,24 @@
           "image": "DSC04228_HDR.jpg",
           "match_percent": 60.46,
           "same_cluster": false,
-          "semantic_percent": 90.23,
+          "semantic_percent": 90.22,
           "hybrid_percent": 69.38,
           "viewpoint_percent": 29.22
         },
         {
           "image": "DSC04222_HDR.jpg",
-          "match_percent": 59.65,
+          "match_percent": 59.64,
           "same_cluster": false,
-          "semantic_percent": 84.97,
-          "hybrid_percent": 67.24,
+          "semantic_percent": 84.96,
+          "hybrid_percent": 67.23,
           "viewpoint_percent": 33.06
         },
         {
           "image": "DSC04225_HDR.jpg",
-          "match_percent": 58.16,
+          "match_percent": 58.17,
           "same_cluster": false,
-          "semantic_percent": 83.62,
-          "hybrid_percent": 64.25,
+          "semantic_percent": 83.64,
+          "hybrid_percent": 64.26,
           "viewpoint_percent": 34.28
         },
         {
@@ -689,17 +689,17 @@
         },
         {
           "image": "DSC04255_HDR.jpg",
-          "match_percent": 63.38,
+          "match_percent": 63.39,
           "same_cluster": false,
-          "semantic_percent": 86.15,
-          "hybrid_percent": 72.35,
+          "semantic_percent": 86.16,
+          "hybrid_percent": 72.36,
           "viewpoint_percent": 35.54
         },
         {
           "image": "DSC04225_HDR.jpg",
-          "match_percent": 62.4,
+          "match_percent": 62.41,
           "same_cluster": false,
-          "semantic_percent": 85.24,
+          "semantic_percent": 85.25,
           "hybrid_percent": 67.83,
           "viewpoint_percent": 41.04
         },
@@ -707,39 +707,39 @@
           "image": "DSC04249_HDR.jpg",
           "match_percent": 61.91,
           "same_cluster": false,
-          "semantic_percent": 91.17,
-          "hybrid_percent": 69.91,
+          "semantic_percent": 91.16,
+          "hybrid_percent": 69.9,
           "viewpoint_percent": 32.62
         },
         {
           "image": "DSC04228_HDR.jpg",
-          "match_percent": 60.53,
+          "match_percent": 60.52,
           "same_cluster": false,
-          "semantic_percent": 90.34,
-          "hybrid_percent": 69.12,
+          "semantic_percent": 90.32,
+          "hybrid_percent": 69.11,
           "viewpoint_percent": 29.87
         },
         {
           "image": "DSC04234_HDR.jpg",
           "match_percent": 59.96,
           "same_cluster": false,
-          "semantic_percent": 96.39,
-          "hybrid_percent": 69.18,
+          "semantic_percent": 96.4,
+          "hybrid_percent": 69.19,
           "viewpoint_percent": 24.82
         },
         {
           "image": "DSC04222_HDR.jpg",
           "match_percent": 59.48,
           "same_cluster": false,
-          "semantic_percent": 86.29,
-          "hybrid_percent": 67.46,
+          "semantic_percent": 86.28,
+          "hybrid_percent": 67.45,
           "viewpoint_percent": 31.45
         },
         {
           "image": "DSC04237_HDR.jpg",
-          "match_percent": 55.73,
+          "match_percent": 55.72,
           "same_cluster": false,
-          "semantic_percent": 96.66,
+          "semantic_percent": 96.64,
           "hybrid_percent": 64.7,
           "viewpoint_percent": 18.8
         },
@@ -747,7 +747,7 @@
           "image": "DSC04246_HDR.jpg",
           "match_percent": 51.63,
           "same_cluster": false,
-          "semantic_percent": 95.91,
+          "semantic_percent": 95.9,
           "hybrid_percent": 59.5,
           "viewpoint_percent": 15.07
         }
@@ -761,7 +761,7 @@
           "image": "DSC04249_HDR.jpg",
           "match_percent": 59.67,
           "same_cluster": false,
-          "semantic_percent": 88.49,
+          "semantic_percent": 88.48,
           "hybrid_percent": 67.84,
           "viewpoint_percent": 30.28
         },
@@ -770,15 +770,15 @@
           "match_percent": 58.25,
           "same_cluster": false,
           "semantic_percent": 88.76,
-          "hybrid_percent": 66.8,
+          "hybrid_percent": 66.79,
           "viewpoint_percent": 27.34
         },
         {
           "image": "DSC04237_HDR.jpg",
-          "match_percent": 55.79,
+          "match_percent": 55.78,
           "same_cluster": false,
-          "semantic_percent": 93.72,
-          "hybrid_percent": 63.81,
+          "semantic_percent": 93.7,
+          "hybrid_percent": 63.8,
           "viewpoint_percent": 22.13
         },
         {
@@ -793,23 +793,23 @@
           "image": "DSC04255_HDR.jpg",
           "match_percent": 55.05,
           "same_cluster": false,
-          "semantic_percent": 84.6,
+          "semantic_percent": 84.61,
           "hybrid_percent": 63.59,
           "viewpoint_percent": 24.62
         },
         {
           "image": "DSC04222_HDR.jpg",
-          "match_percent": 53.63,
+          "match_percent": 53.62,
           "same_cluster": false,
-          "semantic_percent": 83.35,
-          "hybrid_percent": 59.72,
+          "semantic_percent": 83.33,
+          "hybrid_percent": 59.71,
           "viewpoint_percent": 27.6
         },
         {
           "image": "DSC04234_HDR.jpg",
           "match_percent": 52.36,
           "same_cluster": false,
-          "semantic_percent": 92.52,
+          "semantic_percent": 92.53,
           "hybrid_percent": 60.5,
           "viewpoint_percent": 17.37
         },
@@ -825,24 +825,24 @@
           "image": "DSC04243_HDR.jpg",
           "match_percent": 51.63,
           "same_cluster": false,
-          "semantic_percent": 95.91,
+          "semantic_percent": 95.9,
           "hybrid_percent": 59.5,
           "viewpoint_percent": 15.07
         },
         {
           "image": "DSC04228_HDR.jpg",
-          "match_percent": 50.45,
+          "match_percent": 50.44,
           "same_cluster": false,
-          "semantic_percent": 85.13,
-          "hybrid_percent": 58.04,
+          "semantic_percent": 85.12,
+          "hybrid_percent": 58.03,
           "viewpoint_percent": 19.19
         },
         {
           "image": "DSC04252_HDR.jpg",
-          "match_percent": 49.92,
+          "match_percent": 49.91,
           "same_cluster": false,
           "semantic_percent": 83.4,
-          "hybrid_percent": 56.75,
+          "hybrid_percent": 56.74,
           "viewpoint_percent": 20.65
         }
       ]
@@ -855,7 +855,7 @@
           "image": "DSC04222_HDR.jpg",
           "match_percent": 71.28,
           "same_cluster": false,
-          "semantic_percent": 90.9,
+          "semantic_percent": 90.89,
           "hybrid_percent": 77.66,
           "viewpoint_percent": 49.79
         },
@@ -864,79 +864,79 @@
           "match_percent": 68.42,
           "same_cluster": false,
           "semantic_percent": 89.68,
-          "hybrid_percent": 76.41,
+          "hybrid_percent": 76.4,
           "viewpoint_percent": 43.14
         },
         {
           "image": "DSC04252_HDR.jpg",
-          "match_percent": 65.75,
+          "match_percent": 65.76,
           "same_cluster": false,
-          "semantic_percent": 89.65,
+          "semantic_percent": 89.66,
           "hybrid_percent": 71.89,
           "viewpoint_percent": 42.55
         },
         {
           "image": "DSC04225_HDR.jpg",
-          "match_percent": 65.22,
+          "match_percent": 65.23,
           "same_cluster": false,
-          "semantic_percent": 90.96,
-          "hybrid_percent": 70.13,
+          "semantic_percent": 90.97,
+          "hybrid_percent": 70.14,
           "viewpoint_percent": 43.36
         },
         {
           "image": "DSC04228_HDR.jpg",
           "match_percent": 65.03,
           "same_cluster": true,
-          "semantic_percent": 93.71,
+          "semantic_percent": 93.72,
           "hybrid_percent": 73.25,
           "viewpoint_percent": 35.63
         },
         {
           "image": "DSC04231_HDR.jpg",
-          "match_percent": 63.3,
+          "match_percent": 63.31,
           "same_cluster": false,
-          "semantic_percent": 91.56,
+          "semantic_percent": 91.57,
           "hybrid_percent": 71.43,
           "viewpoint_percent": 34.28
         },
         {
           "image": "DSC04234_HDR.jpg",
-          "match_percent": 62.92,
+          "match_percent": 62.93,
           "same_cluster": false,
-          "semantic_percent": 89.69,
-          "hybrid_percent": 70.58,
+          "semantic_percent": 89.7,
+          "hybrid_percent": 70.59,
           "viewpoint_percent": 35.51
         },
         {
           "image": "DSC04240_HDR.jpg",
-          "match_percent": 62.72,
+          "match_percent": 62.73,
           "same_cluster": false,
-          "semantic_percent": 90.08,
-          "hybrid_percent": 70.24,
+          "semantic_percent": 90.09,
+          "hybrid_percent": 70.25,
           "viewpoint_percent": 35.26
         },
         {
           "image": "DSC04243_HDR.jpg",
           "match_percent": 61.91,
           "same_cluster": false,
-          "semantic_percent": 91.17,
-          "hybrid_percent": 69.91,
+          "semantic_percent": 91.16,
+          "hybrid_percent": 69.9,
           "viewpoint_percent": 32.62
         },
         {
           "image": "DSC04246_HDR.jpg",
           "match_percent": 59.67,
           "same_cluster": false,
-          "semantic_percent": 88.49,
+          "semantic_percent": 88.48,
           "hybrid_percent": 67.84,
           "viewpoint_percent": 30.28
         },
         {
           "image": "DSC04237_HDR.jpg",
-          "match_percent": 58.26,
+          "match_percent": 58.25,
           "same_cluster": false,
-          "semantic_percent": 89.18,
-          "hybrid_percent": 65.28,
+          "semantic_percent": 89.17,
+          "hybrid_percent": 65.27,
           "viewpoint_percent": 29.93
         }
       ]
@@ -955,7 +955,7 @@
         },
         {
           "image": "DSC04222_HDR.jpg",
-          "match_percent": 70.93,
+          "match_percent": 70.92,
           "same_cluster": false,
           "semantic_percent": 95.57,
           "hybrid_percent": 78.26,
@@ -963,18 +963,18 @@
         },
         {
           "image": "DSC04225_HDR.jpg",
-          "match_percent": 69.58,
+          "match_percent": 69.59,
           "same_cluster": false,
-          "semantic_percent": 95.08,
-          "hybrid_percent": 75.8,
+          "semantic_percent": 95.09,
+          "hybrid_percent": 75.81,
           "viewpoint_percent": 45.44
         },
         {
           "image": "DSC04228_HDR.jpg",
           "match_percent": 68.08,
           "same_cluster": false,
-          "semantic_percent": 91.76,
-          "hybrid_percent": 74.39,
+          "semantic_percent": 91.77,
+          "hybrid_percent": 74.4,
           "viewpoint_percent": 44.66
         },
         {
@@ -982,14 +982,14 @@
           "match_percent": 65.86,
           "same_cluster": false,
           "semantic_percent": 90.78,
-          "hybrid_percent": 73.39,
+          "hybrid_percent": 73.4,
           "viewpoint_percent": 39.6
         },
         {
           "image": "DSC04249_HDR.jpg",
-          "match_percent": 65.75,
+          "match_percent": 65.76,
           "same_cluster": false,
-          "semantic_percent": 89.65,
+          "semantic_percent": 89.66,
           "hybrid_percent": 71.89,
           "viewpoint_percent": 42.55
         },
@@ -1013,7 +1013,7 @@
           "image": "DSC04234_HDR.jpg",
           "match_percent": 58.41,
           "same_cluster": false,
-          "semantic_percent": 87.56,
+          "semantic_percent": 87.57,
           "hybrid_percent": 66.53,
           "viewpoint_percent": 28.95
         },
@@ -1027,10 +1027,10 @@
         },
         {
           "image": "DSC04246_HDR.jpg",
-          "match_percent": 49.92,
+          "match_percent": 49.91,
           "same_cluster": false,
           "semantic_percent": 83.4,
-          "hybrid_percent": 56.75,
+          "hybrid_percent": 56.74,
           "viewpoint_percent": 20.65
         }
       ]
@@ -1051,13 +1051,13 @@
           "image": "DSC04222_HDR.jpg",
           "match_percent": 71.0,
           "same_cluster": false,
-          "semantic_percent": 93.73,
-          "hybrid_percent": 81.75,
+          "semantic_percent": 93.72,
+          "hybrid_percent": 81.74,
           "viewpoint_percent": 39.95
         },
         {
           "image": "DSC04225_HDR.jpg",
-          "match_percent": 70.81,
+          "match_percent": 70.82,
           "same_cluster": false,
           "semantic_percent": 91.77,
           "hybrid_percent": 78.57,
@@ -1076,23 +1076,23 @@
           "match_percent": 68.42,
           "same_cluster": false,
           "semantic_percent": 89.68,
-          "hybrid_percent": 76.41,
+          "hybrid_percent": 76.4,
           "viewpoint_percent": 43.14
         },
         {
           "image": "DSC04228_HDR.jpg",
           "match_percent": 67.61,
           "same_cluster": false,
-          "semantic_percent": 88.76,
-          "hybrid_percent": 72.8,
+          "semantic_percent": 88.75,
+          "hybrid_percent": 72.79,
           "viewpoint_percent": 47.53
         },
         {
           "image": "DSC04243_HDR.jpg",
-          "match_percent": 63.38,
+          "match_percent": 63.39,
           "same_cluster": false,
-          "semantic_percent": 86.15,
-          "hybrid_percent": 72.35,
+          "semantic_percent": 86.16,
+          "hybrid_percent": 72.36,
           "viewpoint_percent": 35.54
         },
         {
@@ -1105,10 +1105,10 @@
         },
         {
           "image": "DSC04234_HDR.jpg",
-          "match_percent": 60.01,
+          "match_percent": 60.02,
           "same_cluster": false,
-          "semantic_percent": 87.49,
-          "hybrid_percent": 68.57,
+          "semantic_percent": 87.5,
+          "hybrid_percent": 68.58,
           "viewpoint_percent": 30.58
         },
         {
@@ -1123,7 +1123,7 @@
           "image": "DSC04246_HDR.jpg",
           "match_percent": 55.05,
           "same_cluster": false,
-          "semantic_percent": 84.6,
+          "semantic_percent": 84.61,
           "hybrid_percent": 63.59,
           "viewpoint_percent": 24.62
         }

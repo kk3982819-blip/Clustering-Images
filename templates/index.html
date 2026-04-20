@@ -186,19 +186,53 @@ main {
 }
 
 .clusters-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
-  gap: 24px;
+  display: flex;
+  justify-content: center;
+}
+
+/* ── Cluster Nav ───────────────────────────────────────────────── */
+.cluster-nav {
+  display: flex; gap: 10px; overflow-x: auto; margin-bottom: 24px; padding-bottom: 8px;
+}
+.cluster-nav::-webkit-scrollbar { height: 4px; }
+.cluster-nav::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); border-radius: 2px; }
+
+.cluster-nav-btn {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--txt);
+  padding: 8px 16px;
+  border-radius: 20px;
+  cursor: pointer;
+  white-space: nowrap;
+  font-size: 0.9rem;
+  font-weight: 500;
+  transition: all .2s;
+}
+.cluster-nav-btn:hover {
+  background: rgba(59,130,246,0.1);
+  border-color: rgba(59,130,246,0.5);
+}
+.cluster-nav-btn.active {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: #fff;
 }
 
 /* ── Cluster Card ──────────────────────────────────────────────── */
 .cluster-card {
+  width: 100%;
+  max-width: 600px;
   background: var(--card);
   border: 1px solid var(--border);
   border-radius: 18px;
   overflow: hidden;
   transition: border-color .2s, box-shadow .2s;
   animation: fadeUp .4s ease-out both;
+  display: none; /* hidden by default, toggled by JS */
+}
+.cluster-card.active {
+  display: block;
 }
 .cluster-card:hover {
   border-color: rgba(59,130,246,.35);
@@ -209,22 +243,75 @@ main {
   to   { opacity:1; transform: translateY(0); }
 }
 
+/* ── Cluster Card Hero & Gallery ───────────────────────────────── */
+.hero-container {
+  position: relative;
+  width: 100%;
+  height: 240px;
+  background: #000;
+  overflow: hidden;
+}
+.hero-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: opacity 0.3s ease;
+}
+.detection-toggle {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  background: rgba(17, 24, 39, 0.8);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255,255,255,0.1);
+  color: #fff;
+  border-radius: 20px;
+  padding: 6px 14px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.2s;
+  z-index: 10;
+}
+.detection-toggle:hover {
+  background: rgba(59, 130, 246, 0.8);
+  border-color: rgba(59, 130, 246, 0.5);
+}
+.detection-toggle.active {
+  background: rgba(16, 185, 129, 0.8);
+  border-color: rgba(16, 185, 129, 0.5);
+}
+
 /* thumbnail filmstrip */
 .thumb-strip {
   display: flex;
-  gap: 3px;
-  height: 180px;
-  overflow: hidden;
+  gap: 2px;
+  height: 60px;
+  overflow-x: auto;
   background: #0a0f1d;
+  padding: 2px;
 }
+.thumb-strip::-webkit-scrollbar { height: 4px; }
+.thumb-strip::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); border-radius: 2px; }
+
 .thumb-strip img {
-  flex: 1;
+  flex: 0 0 auto;
+  width: 90px;
+  height: 100%;
   object-fit: cover;
-  min-width: 0;
-  transition: flex .3s ease;
   cursor: pointer;
+  opacity: 0.6;
+  transition: all 0.2s;
+  border-radius: 4px;
 }
-.thumb-strip img:hover { flex: 2.5; }
+.thumb-strip img:hover { opacity: 0.9; }
+.thumb-strip img.active {
+  opacity: 1;
+  border: 2px solid var(--primary);
+}
 
 /* card body */
 .card-body { padding: 18px; }
@@ -345,6 +432,10 @@ main {
     </svg>
   </div>
   <h1>PixelDwell <span>AI Photo Editing Platform</span></h1>
+  <div style="flex-grow: 1;"></div>
+  <button class="btn btn-back" style="border-radius: 8px; font-size: 0.8rem; padding: 8px 16px;" onclick="resetProject()">
+    ↺ Start New Project
+  </button>
 </header>
 
 <!-- ── Progress Steps ── -->
@@ -400,6 +491,7 @@ main {
       <h2 class="section-title">Detected Scene Clusters</h2>
       <div class="section-count" id="clusterCount">0 viewpoints</div>
     </div>
+    <div class="cluster-nav" id="clusterNav"></div>
     <div class="clusters-grid" id="clustersGrid"></div>
   </div>
 </main>
@@ -416,6 +508,19 @@ const dropZone = document.getElementById('dropZone');
 const fileInput = document.getElementById('fileInput');
 const clusterBtn = document.getElementById('clusterBtn');
 let selectedFiles = null;
+
+// ── Restore Latest Session ──────────────────────────────────────
+window.addEventListener('DOMContentLoaded', async () => {
+  try {
+    const res = await fetch('/latest-job');
+    const data = await res.json();
+    if (data.clusters && data.clusters.length > 0) {
+      renderClusters(data.clusters);
+    }
+  } catch (err) {
+    console.error('Failed to load latest job:', err);
+  }
+});
 
 dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('over'); });
 dropZone.addEventListener('dragleave', () => dropZone.classList.remove('over'));
@@ -498,110 +603,73 @@ function tagClass(t) {
   return 'object';
 }
 
+// ── Reset Project ───────────────────────────────────────────────
+function resetProject() {
+  if (confirm("This will clear the current results. Start a new project?")) {
+    document.getElementById('uploadSection').style.display = 'block';
+    document.getElementById('uploadSection').querySelector('.btn-primary').style.display = 'flex';
+    document.getElementById('clustersSection').style.display = 'none';
+    document.getElementById('fileBadge').style.display = 'none';
+    document.getElementById('clusterBtn').disabled = true;
+    selectedFiles = null;
+    fileInput.value = '';
+    setStep(1);
+    // Refresh to clear any server-side latest-job cache if needed, 
+    // but just UI reset is usually enough for the user.
+  }
+}
+
 function renderClusters(clusters) {
   document.getElementById('uploadSection').querySelector('.btn-primary').style.display = 'none';
   document.getElementById('clustersSection').style.display = 'block';
   document.getElementById('clusterCount').textContent = `${clusters.length} viewpoint${clusters.length !== 1 ? 's' : ''}`;
 
+  const nav = document.getElementById('clusterNav');
   const grid = document.getElementById('clustersGrid');
+  if (nav) nav.innerHTML = '';
   grid.innerHTML = '';
   setStep(3);
 
   clusters.forEach((c, idx) => {
-    // c.tags is now a flat deduplicated array from the backend
-    const allTags = (c.tags || []).slice(0, 14);
-
-
+    // Generate simple preview card
+    const firstThumb = c.thumbnails && c.thumbnails.length > 0 ? c.thumbnails[0].original : '';
     const card = document.createElement('div');
     card.className = 'cluster-card';
+    card.style.display = 'block';
+    card.style.cursor = 'pointer';
     card.style.animationDelay = `${idx * 80}ms`;
+    card.onclick = () => {
+      window.location.href = `/job/${c.job_id}/cluster/${c.id}`;
+    };
 
-    const thumbsHtml = c.thumbnails.slice(0, 5).map(url =>
-      `<img src="${url}?t=${Date.now()}" loading="lazy" onclick="openLightbox('${url}')" alt="">`
-    ).join('');
-
-    const tagsHtml = allTags.map(t =>
-      `<span class="tag ${tagClass(t)}">${t}</span>`
-    ).join('');
-
-    const cardId = c.id.replace(/[^a-z0-9_]/gi, '_');
+    const tagsHtml = (c.tags || []).slice(0, 3).map(t => `<span class="tag">${t}</span>`).join('');
 
     card.innerHTML = `
-      <div class="thumb-strip">${thumbsHtml}</div>
-      <div class="card-body">
-        <div class="card-title">
-          <span class="cluster-dot"></span>
-          ${c.id.replace('_', ' ')} · ${c.thumbnails.length} image${c.thumbnails.length !== 1 ? 's' : ''}
-        </div>
-
-        <div class="detections-section">
-          <div class="det-label">🔍 Detected Elements</div>
-          <div class="tag-cloud">
-            ${tagsHtml || '<span class="tag">No detections</span>'}
-          </div>
-        </div>
-
-        <div class="feature-options">
-          <div class="feat-label">⚙ AI Enhancements</div>
-          <div class="feat-list">
-            <label class="feat-item"><input type="checkbox" name="ai_${cardId}" value="sky_replacement"> Sky Replace</label>
-            <label class="feat-item"><input type="checkbox" name="ai_${cardId}" value="declutter"> Declutter</label>
-            <label class="feat-item"><input type="checkbox" name="ai_${cardId}" value="day_to_dusk"> Day→Dusk</label>
-            <label class="feat-item"><input type="checkbox" name="ai_${cardId}" value="virtual_staging"> Staging</label>
-          </div>
+      <div class="hero-container" style="height: 180px;">
+        <img src="${firstThumb}?t=${Date.now()}" class="hero-img" alt="">
+        <div style="position: absolute; bottom: 10px; right: 10px; background: rgba(0,0,0,0.7); padding: 4px 10px; border-radius: 12px; font-size: 0.75rem; font-weight: 600;">
+          ${c.thumbnails ? c.thumbnails.length : 0} Images
         </div>
       </div>
-
-      <div class="card-footer">
-        <div class="card-loader" id="loader_${cardId}">
-          <div class="card-spinner"></div>
-          Merging exposures &amp; enhancing…
+      <div class="card-body">
+        <div class="card-title" style="margin-bottom: 6px;">
+          <span class="cluster-dot"></span>
+          ${c.id.replace('_', ' ')}
         </div>
-        <button class="btn btn-sm" onclick="enhanceCluster('${c.id}', '${cardId}')">
-          ✦ Apply HDR Fusion &amp; Enhance
-        </button>
-        <div class="hdr-result" id="result_${cardId}">
-          <span class="hdr-badge">HDR ✓</span>
-          <img id="hdr_img_${cardId}" src="" alt="HDR Result">
+        <div class="tag-cloud" style="margin-top: 10px;">
+          ${tagsHtml}
+          ${(c.tags && c.tags.length > 3) ? `<span class="tag" style="background:transparent;border:none;">+${c.tags.length - 3} more</span>` : ''}
         </div>
+        <button class="btn btn-primary" style="margin-top: 16px; padding: 10px; font-size: 0.85rem;">View Cluster →</button>
       </div>
     `;
     grid.appendChild(card);
   });
 }
 
-// ── Phase 2: HDR Enhancement per cluster ───────────────────────
-async function enhanceCluster(clusterId, cardId) {
-  const loaderEl = document.getElementById(`loader_${cardId}`);
-  const resultEl = document.getElementById(`result_${cardId}`);
-  const btn      = event.currentTarget;
 
-  btn.disabled = true;
-  loaderEl.style.display = 'flex';
 
-  // Gather checked AI features for this card
-  const checkboxes = document.querySelectorAll(`input[name="ai_${cardId}"]:checked`);
-  const form = new FormData();
-  form.append('cluster_id', clusterId);
-  checkboxes.forEach(cb => form.append('ai_features', cb.value));
 
-  try {
-    const res  = await fetch('/enhance-cluster', { method: 'POST', body: form });
-    const data = await res.json();
-
-    if (data.error) {
-      alert('Enhancement failed: ' + data.error);
-    } else {
-      document.getElementById(`hdr_img_${cardId}`).src = data.image_url + '?t=' + Date.now();
-      resultEl.style.display = 'block';
-    }
-  } catch (err) {
-    alert('Request failed: ' + err.message);
-  } finally {
-    loaderEl.style.display = 'none';
-    btn.disabled = false;
-  }
-}
 
 // ── Lightbox ────────────────────────────────────────────────────
 function openLightbox(url) {

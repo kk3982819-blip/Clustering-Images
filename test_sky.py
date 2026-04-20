@@ -4,7 +4,7 @@ from api_orchestrator import EnhancementOrchestrator
 
 def main():
     # Use the CLEAN original (no annotations) for sky replacement
-    target_img = Path(r"c:\Users\Mohammed kaif M\OneDrive\Desktop\clustering images\uploads_temp\raw\DSC04222_HDR.jpg")
+    target_img = Path(r"c:\Users\Mohammed kaif M\OneDrive\Desktop\clustering images\uploads_temp\raw\DSC04225_HDR.jpg")
     output_dir = Path(r"c:\Users\Mohammed kaif M\OneDrive\Desktop\clustering images\output_test_sky")
 
     orchestrator = EnhancementOrchestrator()

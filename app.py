@@ -3,6 +3,7 @@ import subprocess
 import sys
 import json
 import traceback
+import logging
 from pathlib import Path
 from typing import List
 
@@ -13,6 +14,9 @@ from fastapi.templating import Jinja2Templates
 
 from hdr_engine import process_bracketed_set
 from api_orchestrator import EnhancementOrchestrator
+
+import uuid
+from database import create_job, insert_cluster, insert_image, insert_enhancement, get_latest_job_clusters, get_cluster_details
 
 app = FastAPI(title="PixelDwell AI Photo Editor")
 
@@ -48,6 +52,28 @@ def _clear_dir(path: Path):
 async def index(request: Request):
     return templates.TemplateResponse(request=request, name="index.html")
 
+@app.get("/job/{job_id}/cluster/{cluster_name}", response_class=HTMLResponse)
+async def view_cluster(request: Request, job_id: str, cluster_name: str):
+    cluster = get_cluster_details(job_id, cluster_name)
+    if not cluster:
+        return HTMLResponse("Cluster not found", status_code=404)
+    return templates.TemplateResponse(
+        request=request, 
+        name="cluster.html",
+        context={"cluster": cluster}
+    )
+
+
+@app.get("/latest-job")
+async def latest_job():
+    try:
+        clusters = get_latest_job_clusters()
+        if clusters:
+            return {"clusters": clusters}
+        return {"clusters": []}
+    except Exception as exc:
+        traceback.print_exc()
+        return JSONResponse({"error": str(exc)}, status_code=500)
 
 @app.post("/upload-and-cluster")
 async def upload_and_cluster(files: List[UploadFile] = File(...)):
@@ -99,6 +125,9 @@ async def upload_and_cluster(files: List[UploadFile] = File(...)):
 
         # Build response payload
         response_clusters = []
+        job_id = str(uuid.uuid4())
+        create_job(job_id)
+
         for cluster_name, members in clusters_data.items():
             if cluster_name == "noise":
                 continue  # Noise images excluded from the result cards
@@ -111,7 +140,15 @@ async def upload_and_cluster(files: List[UploadFile] = File(...)):
                 if not img_name:
                     continue
 
-                thumbnails.append(f"/clusters/{cluster_name}/{img_name}")
+                stem = Path(img_name).stem
+                labeled_name = f"{stem}_labeled.jpg"
+                labeled_path = CLUSTER_OUT / cluster_name / labeled_name
+
+                thumbnails.append({
+                    "original": f"/clusters/{cluster_name}/{img_name}",
+                    "labeled": f"/clusters/{cluster_name}/{labeled_name}" if labeled_path.exists() else None,
+                    "filename": img_name
+                })
 
                 # ── Scene tags (from CLIP scene labeler) ──────────────────
                 for tag in member.get("tags", []):
@@ -132,14 +169,34 @@ async def upload_and_cluster(files: List[UploadFile] = File(...)):
                         if lbl and lbl.lower() not in [t.lower() for t in all_tag_set]:
                             all_tag_set.append(lbl)
 
+                # Insert Image into DB
+                image_id = str(uuid.uuid4())
+                orig_url = f"/clusters/{cluster_name}/{img_name}"
+                labeled_url = f"/clusters/{cluster_name}/{labeled_name}" if labeled_path.exists() else ""
+                
+                cluster_id = f"{job_id}_{cluster_name}"
+                insert_image(
+                    image_id=image_id,
+                    cluster_id=cluster_id,
+                    filename=img_name,
+                    original_path=orig_url,
+                    labeled_path=labeled_url,
+                    annotations=member.get("annotations", [])
+                )
+
             if not thumbnails:
                 continue
 
+            tags_to_store = all_tag_set[:20]
+            cluster_id = f"{job_id}_{cluster_name}"
+            insert_cluster(cluster_id, job_id, cluster_name, tags_to_store)
+
             response_clusters.append({
                 "id":         cluster_name,
+                "job_id":     job_id,
                 "count":      len(thumbnails),
                 "thumbnails": thumbnails,
-                "tags":       all_tag_set[:20],  # cap at 20 unique labels
+                "tags":       tags_to_store,  # cap at 20 unique labels
             })
 
         print(f"[PixelDwell] Returning {len(response_clusters)} cluster cards to frontend.")
@@ -153,6 +210,7 @@ async def upload_and_cluster(files: List[UploadFile] = File(...)):
 @app.post("/enhance-cluster")
 async def enhance_cluster(
     cluster_id: str = Form(...),
+    job_id: str = Form(default=""),
     ai_features: List[str] = Form(default=[]),
 ):
     """
@@ -163,11 +221,13 @@ async def enhance_cluster(
         if not cluster_dir.exists():
             return JSONResponse({"error": f"Cluster '{cluster_id}' not found."}, status_code=404)
 
-        images = sorted(
-            list(cluster_dir.glob("*.jpg")) +
-            list(cluster_dir.glob("*.jpeg")) +
-            list(cluster_dir.glob("*.png"))
-        )
+        # Filter to only pick up CLEAN original photos (exclude _labeled.jpg)
+        images = sorted([
+            p for p in cluster_dir.iterdir()
+            if p.suffix.lower() in [".jpg", ".jpeg", ".png"]
+            and not p.name.endswith("_labeled.jpg")
+            and "_mask_" not in p.name
+        ])
         if not images:
             return JSONResponse({"error": "No images found in that cluster."}, status_code=404)
 
@@ -184,12 +244,127 @@ async def enhance_cluster(
                 requested_features=ai_features,
                 output_dir=str(OUTPUT_DIR),
             )
+            
+            # Log enhancements
+            if job_id:
+                db_cluster_id = f"{job_id}_{cluster_id}"
+                for feature in ai_features:
+                    insert_enhancement(
+                        enhancement_id=str(uuid.uuid4()),
+                        cluster_id=db_cluster_id,
+                        feature_name=feature,
+                        result_image_path=f"/output_web/{Path(final_path).name}",
+                        status="completed"
+                    )
 
         return {
             "success":   True,
             "image_url": f"/output_web/{Path(final_path).name}",
         }
 
+    except Exception as exc:
+        traceback.print_exc()
+        return JSONResponse({"error": str(exc)}, status_code=500)
+@app.post("/enhance-single")
+async def enhance_single(
+    cluster_id: str = Form(...),
+    filename: str = Form(...),
+    job_id: str = Form(default=""),
+    ai_features: List[str] = Form(default=[]),
+):
+    """
+    Phase 2b · Enhance a single image (skip HDR fusion).
+    """
+    try:
+        source_path = CLUSTER_OUT / cluster_id / filename
+        if not source_path.exists():
+            return JSONResponse({"error": f"Image '{filename}' not found in cluster '{cluster_id}'."}, status_code=404)
+
+        # Skip fusion, go straight to enhancement
+        # We save it with a 'single_' prefix to distinguish from fused results
+        stem = Path(filename).stem
+        out_name = f"enhanced_{cluster_id}_{stem}.jpg"
+        
+        # We need to copy the file to a temp location because orchestrator might modify/move it?
+        # Actually orchestrator.process_image takes the path and saves to output_dir.
+        
+        final_path = orchestrator.process_image(
+            image_path=str(source_path),
+            requested_features=ai_features,
+            output_dir=str(OUTPUT_DIR),
+        )
+
+        # Log enhancements
+        if job_id:
+            db_cluster_id = f"{job_id}_{cluster_id}"
+            for feature in ai_features:
+                insert_enhancement(
+                    enhancement_id=str(uuid.uuid4()),
+                    cluster_id=db_cluster_id,
+                    feature_name=feature,
+                    result_image_path=f"/output_web/{Path(final_path).name}",
+                    status="completed"
+                )
+
+        return {
+            "success":   True,
+            "image_url": f"/output_web/{Path(final_path).name}",
+        }
+
+    except Exception as exc:
+        traceback.print_exc()
+        return JSONResponse({"error": str(exc)}, status_code=500)
+from urllib.parse import urlparse
+
+def _resolve_url_to_path(url: str) -> Path:
+    """Map a web URL (absolute or relative) back to a local filesystem path."""
+    # Handle absolute URLs by extracting the path component
+    parsed_url = urlparse(url)
+    path_str = parsed_url.path
+    
+    # Standardize path separators for Windows/Unix compatibility
+    path_str = path_str.replace("\\", "/")
+    
+    if path_str.startswith("/clusters/"):
+        # /clusters/cluster_name/image.jpg -> uploads_temp/clustered/cluster_name/image.jpg
+        return CLUSTER_OUT / path_str.replace("/clusters/", "", 1)
+    if path_str.startswith("/output_web/"):
+        # /output_web/image.jpg -> output_web/image.jpg
+        return OUTPUT_DIR / path_str.replace("/output_web/", "", 1)
+        
+    return Path(path_str)
+
+
+@app.post("/process-object-removal")
+async def process_object_removal(
+    image_url: str = Form(...),
+    cluster_id: str = Form(...),
+    job_id: str = Form(...),
+    regions_json: str = Form(...), # List of [[x,y]] or [[x1,y1,x2,y2]]
+):
+    """
+    Handle removal of one or more objects (clicks or bboxes).
+    """
+    try:
+        local_path = _resolve_url_to_path(image_url)
+        if not local_path.exists():
+            return JSONResponse({"error": f"Image not found at {local_path}"}, status_code=404)
+
+        regions = json.loads(regions_json)
+        logging.info(f"[App] Smart Removal of {len(regions)} regions for {local_path.name}")
+        
+        final_path = orchestrator.process_image(
+            image_path=str(local_path),
+            requested_features=["object_removal"],
+            output_dir=str(OUTPUT_DIR),
+            params={"object_removal": regions}
+        )
+
+        return {
+            "success": True,
+            "image_url": f"/output_web/{Path(final_path).name}",
+            "job_id": job_id
+        }
     except Exception as exc:
         traceback.print_exc()
         return JSONResponse({"error": str(exc)}, status_code=500)

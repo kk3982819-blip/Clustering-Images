@@ -109,6 +109,57 @@ def process_image(image_path: Path):
     raw_class_ids = results.boxes.cls.cpu().numpy().astype(int)
     raw_confscores = results.boxes.conf.cpu().numpy()
 
+    # ------- MODEL SWITCH: Fallback detection for objects NOT in PROMPTS -------
+    # YOLOv8x is a general-purpose COCO-trained model that can find objects
+    # the text-prompted YOLO-World missed (e.g. person, dog, bicycle, etc.)
+    print("  -> Running fallback detector (YOLOv8x) for unprompted objects...")
+    fallback_model = YOLO("yolov8x.pt")
+    fallback_res = fallback_model(img, conf=0.25, iou=0.5, verbose=False)[0]
+    fb_bboxes = fallback_res.boxes.xyxy.cpu().numpy()
+    fb_class_ids = fallback_res.boxes.cls.cpu().numpy().astype(int)
+    fb_confs = fallback_res.boxes.conf.cpu().numpy()
+
+    # Build a lookup of fallback COCO class names
+    fallback_names = fallback_res.names  # dict {0: 'person', 1: 'bicycle', ...}
+
+    # Filter out fallback detections that overlap heavily with primary detections
+    # (avoid drawing the same object twice from both models)
+    new_fb_bboxes = []
+    new_fb_class_ids = []
+    new_fb_confs = []
+    for fi in range(len(fb_bboxes)):
+        fb = fb_bboxes[fi]
+        fb_area = (fb[2] - fb[0]) * (fb[3] - fb[1])
+        is_duplicate = False
+        for pb in raw_bboxes:
+            pb_area = (pb[2] - pb[0]) * (pb[3] - pb[1])
+            xx1 = max(fb[0], pb[0])
+            yy1 = max(fb[1], pb[1])
+            xx2 = min(fb[2], pb[2])
+            yy2 = min(fb[3], pb[3])
+            inter = max(0, xx2 - xx1) * max(0, yy2 - yy1)
+            if inter > 0:
+                iou = inter / float(fb_area + pb_area - inter)
+                if iou > 0.50:
+                    is_duplicate = True
+                    break
+        if not is_duplicate:
+            new_fb_bboxes.append(fb)
+            # Offset class IDs so they don't collide with PROMPTS indices
+            new_fb_class_ids.append(fb_class_ids[fi] + len(PROMPTS))
+            new_fb_confs.append(fb_confs[fi])
+
+    if new_fb_bboxes:
+        print(f"  -> Fallback model discovered {len(new_fb_bboxes)} new objects not in primary prompts!")
+        fb_arr = np.array(new_fb_bboxes)
+        fb_cid = np.array(new_fb_class_ids)
+        fb_cf = np.array(new_fb_confs)
+        raw_bboxes = np.concatenate([raw_bboxes, fb_arr], axis=0) if raw_bboxes.size else fb_arr
+        raw_class_ids = np.concatenate([raw_class_ids, fb_cid], axis=0) if raw_class_ids.size else fb_cid
+        raw_confscores = np.concatenate([raw_confscores, fb_cf], axis=0) if raw_confscores.size else fb_cf
+    else:
+        print("  -> Fallback model found no additional objects.")
+
     # --- CUSTOM DEDUPLICATION & FILTERING ---
     # Because our keyword dictionary contains many synonyms ("tv", "television", "wall", "painted wall"),
     # we need to prevent drawing 4 identical overlapping boundaries for the exact same semantic object.
@@ -175,17 +226,31 @@ def process_image(image_path: Path):
     annotated_img = img.copy()
     
     for i in range(len(bboxes)):
-        class_id = class_ids[i]
-        prompt_name = PROMPTS[class_id]
-        label = get_label_name(class_id, bboxes[i], img.shape[1])
-        color = COLORS[prompt_name]
+        class_id = int(class_ids[i])
+        conf = confscores[i]
+
+        # ── Resolve label name & color for BOTH primary and fallback detections ──
+        if class_id < len(PROMPTS):
+            # Primary detection (YOLO-World) — use PROMPTS list
+            prompt_name = PROMPTS[class_id]
+            color = COLORS[prompt_name]
+            label = f"{get_label_name(class_id, bboxes[i], img.shape[1])} ({conf:.2f})"
+        else:
+            # Fallback detection (YOLOv8x) — use COCO class names
+            original_coco_id = class_id - len(PROMPTS)
+            prompt_name = fallback_names.get(original_coco_id, f"object_{original_coco_id}")
+            # Generate a consistent color for this fallback class
+            np.random.seed(hash(prompt_name) % 2**31)
+            color = np.random.randint(40, 255, 3).tolist()
+            label = f"{prompt_name.title()} ({conf:.2f})"
         
+        m = masks[i]
         if m.shape != img.shape[:2]:
             m = cv2.resize(m, (img.shape[1], img.shape[0]), interpolation=cv2.INTER_NEAREST)
             
         # smoothing pass to remove noise and jagged edges
         mask_u8 = (m * 255).astype(np.uint8)
-        mask_u8 = cv2.medianBlur(mask_u8, 7)
+        mask_u8 = cv2.medianBlur(mask_u8, 3)
             
         # Extract boundary contour
         contours, _ = cv2.findContours(mask_u8, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
@@ -197,7 +262,7 @@ def process_image(image_path: Path):
         
         # Apply polygonal approximation if it's a structural element (to get perfectly straight lines)
         if prompt_name in STRUCTURAL_CLASSES:
-            epsilon = 0.015 * cv2.arcLength(largest_contour, True) # 1.5% error margin for smoother architectural lines
+            epsilon = 0.008 * cv2.arcLength(largest_contour, True) # Conservative error margin
             largest_contour = cv2.approxPolyDP(largest_contour, epsilon, True)
             
         # Draw the main outline (thick)
@@ -207,7 +272,7 @@ def process_image(image_path: Path):
         x1, y1, x2, y2 = map(int, bboxes[i])
         cv2.rectangle(annotated_img, (x1, y1), (x2, y2), color, 1)
         
-        # Draw floating text label
+        # Draw floating text label — SAME STYLE for both primary and fallback
         draw_styled_label(annotated_img, label, bboxes[i], color)
 
     out_path = OUTPUT_DIR / f"{image_path.stem}_detailed.jpg"

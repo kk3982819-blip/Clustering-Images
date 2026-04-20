@@ -31,118 +31,156 @@ class NanoBananaAPI:
         time.sleep(1)
         return job_id
 
-    def fetch_result(self, job_id, output_path, input_path, mask_path=None):
+    def fetch_result(self, job_id, output_path, input_path, mask_path=None, feature=None):
         """
         Polls for result and downloads it to the output_path.
-        For demonstration, since we don't have a real NanoBanana Generative endpoint,
-        we simulate the cloud processing by compositing a new sky onto the masked area.
+        Simulates cloud processing for various Advanced AI features.
         """
         logging.info(f"[NanoBananaAPI] Polling status for Job {job_id}...")
-        time.sleep(1) # Mock processing time
+        time.sleep(1) 
         
-        logging.info(f"[NanoBananaAPI] Job {job_id} complete. Downloading result...")
+        import cv2
+        import numpy as np
+        import urllib.request
         
-        if mask_path and Path(mask_path).exists():
-            import cv2
-            import numpy as np
-            import urllib.request
-            
-            # Load images
-            fg = cv2.imread(str(input_path))
+        # Load input image
+        img = cv2.imread(str(input_path))
+        if img is None:
+            logging.error("[NanoBananaAPI] Could not load input image.")
+            return False
+
+        # ── Feature-Specific Simulation ──────────────────────────────────────
+        
+        # A. Object Removal / Decluttering (High-Fidelity AI Inpainting)
+        if feature in ["object_removal", "declutter"] and mask_path and Path(mask_path).exists():
             mask = cv2.imread(str(mask_path), cv2.IMREAD_GRAYSCALE)
-            
-            if fg is None or mask is None:
-                logging.error("[NanoBananaAPI] Could not load input image or mask.")
-                import shutil
-                shutil.copy2(input_path, output_path)
-                return True
-            
-            # Ensure mask matches fg dimensions
-            if mask.shape[:2] != fg.shape[:2]:
-                mask = cv2.resize(mask, (fg.shape[1], fg.shape[0]), interpolation=cv2.INTER_NEAREST)
-            
-            # Download a sample beautiful sky image to simulate the API generation
-            sky_url = "https://images.unsplash.com/photo-1513002749550-c59d786b8e6c?q=80&w=1600&auto=format&fit=crop"
-            try:
-                req = urllib.request.urlopen(sky_url)
-                arr = np.asarray(bytearray(req.read()), dtype=np.uint8)
-                sky_src = cv2.imdecode(arr, -1)
+            if mask is not None:
+                logging.info(f"[NanoBananaAPI] Executing Professional AI Inpainting for {feature}...")
                 
-                if sky_src is None:
-                    raise RuntimeError("Failed to decode sky image")
+                # 1. Prepare Mask (Ensure full coverage)
+                if mask.shape[:2] != img.shape[:2]:
+                    mask = cv2.resize(mask, (img.shape[1], img.shape[0]), interpolation=cv2.INTER_NEAREST)
                 
-                # ── Fit sky to mask boundary ────────────────────────────
-                # Find individual connected sky regions and fill each one
-                # with a properly-fit crop of the sky texture.
-                contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+                # ── PRO APPROACH: Multi-Pass Inpainting ──────────────────────
+                # Pass 1: Structural Fill (Large Radius)
+                structural = cv2.inpaint(img, mask, 15, cv2.INPAINT_NS)
                 
-                # Start with the original foreground
-                result = fg.copy()
+                # Pass 2: Detail Refinement (Small Radius)
+                # We use a slightly eroded version of the mask for the second pass
+                # to focus on the transitions.
+                kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
+                inner_mask = cv2.erode(mask, kernel, iterations=1)
+                final_inpaint = cv2.inpaint(structural, inner_mask, 3, cv2.INPAINT_TELEA)
                 
-                for cnt in contours:
-                    if cv2.contourArea(cnt) < 100:
-                        continue
-                    
-                    # Get bounding rect for this sky region
-                    x, y, w, h = cv2.boundingRect(cnt)
-                    
-                    # Crop and resize sky texture to fit this specific region
-                    # Use the center portion of the sky image for best appearance
-                    src_h, src_w = sky_src.shape[:2]
-                    # Calculate aspect-preserving crop from sky source
-                    target_aspect = w / max(h, 1)
-                    src_aspect = src_w / max(src_h, 1)
-                    
-                    if target_aspect > src_aspect:
-                        # Target is wider — crop sky vertically
-                        crop_w = src_w
-                        crop_h = int(src_w / target_aspect)
-                        cx, cy = 0, max(0, (src_h - crop_h) // 3)  # Bias toward top (more sky)
-                    else:
-                        # Target is taller — crop sky horizontally
-                        crop_h = src_h
-                        crop_w = int(src_h * target_aspect)
-                        cx, cy = max(0, (src_w - crop_w) // 2), 0
-                    
-                    sky_crop = sky_src[cy:cy+crop_h, cx:cx+crop_w]
-                    
-                    # ── Orientation FIX: Clouds should be at horizon (bottom) ──────
-                    # Most sky textures are brighter/cloudier at the horizon.
-                    # We ensure the sky isn't upside down.
-                    sky_fit = cv2.resize(sky_crop, (w, h), interpolation=cv2.INTER_LANCZOS4)
-                    
-                    # Create a local mask for just this contour
-                    local_mask = np.zeros(mask.shape, dtype=np.uint8)
-                    cv2.drawContours(local_mask, [cnt], -1, 255, -1)
-                    
-                    # Extract local region mask
-                    region_mask = local_mask[y:y+h, x:x+w]
-                    
-                    # ── Enhanced Feathering for 'Smooth Finished' Look ───────────
-                    # Multi-stage blur for super smooth transition
-                    feather_sigma = max(8, min(w, h) // 15)
-                    feather_k = int(feather_sigma * 3) | 1
-                    region_alpha = cv2.GaussianBlur(region_mask, (feather_k, feather_k), 0)
-                    region_alpha = cv2.GaussianBlur(region_alpha, (5, 5), 0) # Second pass
-                    
-                    alpha = region_alpha.astype(float) / 255.0
-                    alpha_3ch = np.expand_dims(alpha, axis=2)
-                    
-                    # Composite sky into just this region
-                    roi = result[y:y+h, x:x+w].astype(float)
-                    sky_blend = roi * (1 - alpha_3ch) + sky_fit.astype(float) * alpha_3ch
-                    result[y:y+h, x:x+w] = np.clip(sky_blend, 0, 255).astype(np.uint8)
+                # ── Realism: Texture Injection ──────────────────────────────
+                # Pure inpainting looks "flat". We add a tiny amount of noise
+                # back to the inpainted area to match the original image grain.
+                noise = np.random.normal(0, 1, final_inpaint.shape).astype(np.uint8)
+                final_result = cv2.addWeighted(final_inpaint, 0.98, noise, 0.02, 0)
+                
+                # Apply only to masked regions (Ensure mask is 2D for boolean indexing)
+                mask_2d = mask.squeeze()
+                if mask_2d.ndim == 3: mask_2d = mask_2d[:, :, 0]
+                
+                result = img.copy()
+                result[mask_2d > 0] = final_result[mask_2d > 0]
                 
                 cv2.imwrite(str(output_path), result)
-                logging.info(f"[NanoBananaAPI] Composited result saved to {output_path}")
                 return True
-            except Exception as e:
-                logging.error(f"[NanoBananaAPI] Mock generation failed: {e}")
+
+        # B. Day-to-Dusk / Dusk-to-Night (Global Transform)
+        if feature in ["day_to_dusk", "dusk_to_night"]:
+            logging.info(f"[NanoBananaAPI] Simulating {feature} transformation...")
+            hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV).astype(float)
+            # Shift hue toward orange/gold, increase saturation, lower value
+            hsv[:,:,0] = (hsv[:,:,0] + 5) % 180 
+            hsv[:,:,1] = np.clip(hsv[:,:,1] * 1.3, 0, 255) 
+            hsv[:,:,2] = np.clip(hsv[:,:,2] * 0.75, 0, 255) 
+            result = cv2.cvtColor(hsv.astype(np.uint8), cv2.COLOR_HSV2BGR)
+            
+            # Add a slight "twilight" glow
+            glow = cv2.GaussianBlur(result, (0, 0), 15)
+            result = cv2.addWeighted(result, 0.85, glow, 0.15, 0)
+            cv2.imwrite(str(output_path), result)
+            return True
+
+        # C. Sky Replacement (High-Fidelity Compositing)
+        if feature == "sky_replacement" and mask_path and Path(mask_path).exists():
+            mask = cv2.imread(str(mask_path), cv2.IMREAD_GRAYSCALE)
+            if mask is not None:
+                if mask.shape[:2] != img.shape[:2]:
+                    mask = cv2.resize(mask, (img.shape[1], img.shape[0]), interpolation=cv2.INTER_NEAREST)
                 
-        # Fallback to copy if no mask or generation failed
+                # Fetch a clean high-res professional sky (Pure Blue Sky with Fluffy Clouds)
+                sky_url = "https://images.unsplash.com/photo-1597200381847-30ec200eeb9a?q=82&w=2000&auto=format&fit=crop"
+                try:
+                    req = urllib.request.urlopen(sky_url)
+                    arr = np.asarray(bytearray(req.read()), dtype=np.uint8)
+                    sky_src = cv2.imdecode(arr, -1)
+                    if sky_src is not None:
+                        result = img.copy()
+                        contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+                        for cnt in contours:
+                            if cv2.contourArea(cnt) < 100: continue
+                            x, y, w, h = cv2.boundingRect(cnt)
+                            
+                            # ── Aspect-Ratio Preservation ────────────────────
+                            target_aspect = w / max(h, 1)
+                            src_h, src_w = sky_src.shape[:2]
+                            src_aspect = src_w / max(src_h, 1)
+                            
+                            if target_aspect > src_aspect:
+                                crop_w = src_w
+                                crop_h = int(src_w / target_aspect)
+                                cx, cy = 0, (src_h - crop_h) // 4 # Horizon bias: show more top sky
+                            else:
+                                crop_h = src_h
+                                crop_w = int(src_h * target_aspect)
+                                cx, cy = (src_w - crop_w) // 2, 0
+                            
+                            sky_fit = cv2.resize(sky_src[max(0,cy):min(src_h,cy+crop_h), max(0,cx):min(src_w,cx+crop_w)], (w, h), interpolation=cv2.INTER_LANCZOS4)
+                            
+                            # ── Realism: Light Matching ──────────────────────
+                            # Slightly boost sky exposure to look like "outdoors"
+                            sky_fit = cv2.convertScaleAbs(sky_fit, alpha=1.1, beta=10)
+                            
+                            # ── Professional Feathering (Tightened) ──────────
+                            local_mask = np.zeros(mask.shape, dtype=np.uint8)
+                            cv2.drawContours(local_mask, [cnt], -1, 255, -1)
+                            region_mask = local_mask[y:y+h, x:x+w]
+                            
+                            # Erode slightly to ensure we don't bleed onto the wall
+                            # This is the "solution" to remove the extra part bleeding
+                            kernel_erode = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
+                            region_mask = cv2.erode(region_mask, kernel_erode, iterations=1)
+                            
+                            # Soften edges slightly for realism (but keep it tight)
+                            feather_k = int(max(3, min(w, h) // 40) * 2) | 1
+                            alpha = cv2.GaussianBlur(region_mask, (feather_k, feather_k), 0)
+                            alpha = alpha.astype(float) / 255.0
+                            alpha_3ch = np.expand_dims(alpha, axis=2)
+                            
+                            roi = result[y:y+h, x:x+w].astype(float)
+                            blend = roi * (1 - alpha_3ch) + sky_fit.astype(float) * alpha_3ch
+                            result[y:y+h, x:x+w] = np.clip(blend, 0, 255).astype(np.uint8)
+                        
+                        cv2.imwrite(str(output_path), result)
+                        logging.info(f"[NanoBananaAPI] Realistic sky replacement saved to {output_path}")
+                        return True
+                except Exception as e:
+                    logging.error(f"[NanoBananaAPI] Sky fitting failed: {e}")
+
+        # D. Virtual Staging / Renovation Sketch
+        if feature in ["virtual_staging", "sketch_overlay"]:
+            logging.info(f"[NanoBananaAPI] Simulating {feature} generation...")
+            # For demonstration, we boost details to simulate "staging" injection
+            result = cv2.detailEnhance(img, sigma_s=10, sigma_r=0.15)
+            cv2.imwrite(str(output_path), result)
+            return True
+
+        # If no specific simulation matched or failed, copy input to output
         import shutil
         shutil.copy2(input_path, output_path)
-        logging.info(f"[NanoBananaAPI] Result saved to {output_path}")
         return True
 
 
@@ -161,14 +199,18 @@ class EnhancementOrchestrator:
             "perspective_correction": "LOCAL",
             "sky_replacement": "API",
             "declutter": "API",
+            "object_removal": "API",
             "virtual_staging": "API",
-            "day_to_dusk": "API"
+            "day_to_dusk": "API",
+            "sketch_overlay": "API"
         }
 
-    def process_image(self, image_path, requested_features, output_dir):
+    def process_image(self, image_path, requested_features, output_dir, params=None):
         """
         Takes a base image and dynamically routes enhancement requests.
+        params: Optional dict for feature-specific data (e.g. {'object_removal': [[x,y]]})
         """
+        params = params or {}
         current_image_path = Path(image_path)
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
@@ -193,7 +235,7 @@ class EnhancementOrchestrator:
                 step_filename = f"{current_image_path.stem}_{feature}.jpg"
                 step_path = output_dir / step_filename
                 
-                # If feature is sky_replacement, generate the boundary mask first
+                # If feature is sky_replacement or object_removal, handle masks
                 mask_path = None
                 if feature == "sky_replacement":
                     mask_filename = f"{current_image_path.stem}_skymask.png"
@@ -208,9 +250,22 @@ class EnhancementOrchestrator:
                     except Exception as e:
                         logging.error(f"[{feature}] Mask generation error: {e}")
                 
+                elif feature in ["object_removal", "declutter"]:
+                    points = params.get(feature)
+                    if points:
+                        mask_filename = f"{current_image_path.stem}_objmask.png"
+                        mask_path = output_dir / mask_filename
+                        try:
+                            from mask_generator import generate_object_mask
+                            logging.info(f"[{feature}] Generating interactive object mask at {points}...")
+                            success = generate_object_mask(current_image_path, mask_path, points)
+                            if not success: mask_path = None
+                        except Exception as e:
+                            logging.error(f"[{feature}] Object mask generation error: {e}")
+                
                 # Execute API Call
                 job_id = self.ai_api.submit_job(current_image_path, feature)
-                success = self.ai_api.fetch_result(job_id, step_path, current_image_path, mask_path=mask_path)
+                success = self.ai_api.fetch_result(job_id, step_path, current_image_path, mask_path=mask_path, feature=feature)
                 
                 if success:
                     # The output of this step becomes the input for the next feature
