@@ -433,4 +433,5 @@ not as:
 - [input](</c:/Users/Mohammed kaif M/OneDrive/Desktop/clustering images/input>): input images
 - [output](</c:/Users/Mohammed kaif M/OneDrive/Desktop/clustering images/output>): clustered image output
 #   C l u s t e r i n g - I m a g e s  
+ #   C l u s t e r i n g - I m a g e s  
  
