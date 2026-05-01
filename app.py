@@ -6,6 +6,8 @@ import traceback
 import logging
 from pathlib import Path
 from typing import List
+import uuid
+from urllib.parse import urlparse
 
 from fastapi import FastAPI, UploadFile, File, Form, Request
 from fastapi.responses import HTMLResponse, JSONResponse
@@ -14,9 +16,8 @@ from fastapi.templating import Jinja2Templates
 
 from hdr_engine import process_bracketed_set
 from api_orchestrator import EnhancementOrchestrator
-
-import uuid
 from database import create_job, insert_cluster, insert_image, insert_enhancement, get_latest_job_clusters, get_cluster_details
+from full_scene_generator import generate_full_scene_variant
 
 app = FastAPI(title="PixelDwell AI Photo Editor")
 
@@ -174,10 +175,10 @@ async def upload_and_cluster(files: List[UploadFile] = File(...)):
                 orig_url = f"/clusters/{cluster_name}/{img_name}"
                 labeled_url = f"/clusters/{cluster_name}/{labeled_name}" if labeled_path.exists() else ""
                 
-                cluster_id = f"{job_id}_{cluster_name}"
+                cluster_db_id = f"{job_id}_{cluster_name}"
                 insert_image(
                     image_id=image_id,
-                    cluster_id=cluster_id,
+                    cluster_id=cluster_db_id,
                     filename=img_name,
                     original_path=orig_url,
                     labeled_path=labeled_url,
@@ -188,8 +189,8 @@ async def upload_and_cluster(files: List[UploadFile] = File(...)):
                 continue
 
             tags_to_store = all_tag_set[:20]
-            cluster_id = f"{job_id}_{cluster_name}"
-            insert_cluster(cluster_id, job_id, cluster_name, tags_to_store)
+            cluster_db_id = f"{job_id}_{cluster_name}"
+            insert_cluster(cluster_db_id, job_id, cluster_name, tags_to_store)
 
             response_clusters.append({
                 "id":         cluster_name,
@@ -212,6 +213,7 @@ async def enhance_cluster(
     cluster_id: str = Form(...),
     job_id: str = Form(default=""),
     ai_features: List[str] = Form(default=[]),
+    weather: str = Form(default="sunny"),
 ):
     """
     Phase 2  ·  HDR-fuse the images in one cluster, optionally apply AI features.
@@ -243,6 +245,7 @@ async def enhance_cluster(
                 image_path=str(out_path),
                 requested_features=ai_features,
                 output_dir=str(OUTPUT_DIR),
+                params={"weather": weather}
             )
             
             # Log enhancements
@@ -265,12 +268,15 @@ async def enhance_cluster(
     except Exception as exc:
         traceback.print_exc()
         return JSONResponse({"error": str(exc)}, status_code=500)
+
+
 @app.post("/enhance-single")
 async def enhance_single(
     cluster_id: str = Form(...),
     filename: str = Form(...),
     job_id: str = Form(default=""),
     ai_features: List[str] = Form(default=[]),
+    weather: str = Form(default="sunny"),
 ):
     """
     Phase 2b · Enhance a single image (skip HDR fusion).
@@ -280,19 +286,25 @@ async def enhance_single(
         if not source_path.exists():
             return JSONResponse({"error": f"Image '{filename}' not found in cluster '{cluster_id}'."}, status_code=404)
 
-        # Skip fusion, go straight to enhancement
-        # We save it with a 'single_' prefix to distinguish from fused results
-        stem = Path(filename).stem
-        out_name = f"enhanced_{cluster_id}_{stem}.jpg"
-        
-        # We need to copy the file to a temp location because orchestrator might modify/move it?
-        # Actually orchestrator.process_image takes the path and saves to output_dir.
-        
-        final_path = orchestrator.process_image(
-            image_path=str(source_path),
-            requested_features=ai_features,
-            output_dir=str(OUTPUT_DIR),
-        )
+        final_path = source_path
+        remaining_features = list(ai_features)
+
+        if "sky_replacement" in remaining_features:
+            generated_path = OUTPUT_DIR / f"{source_path.stem}_full_scene_sky.jpg"
+            final_path = generate_full_scene_variant(
+                input_path=source_path,
+                output_path=generated_path,
+                weather=weather,
+            )
+            remaining_features = [feature for feature in remaining_features if feature != "sky_replacement"]
+
+        if remaining_features:
+            final_path = orchestrator.process_image(
+                image_path=str(final_path),
+                requested_features=remaining_features,
+                output_dir=str(OUTPUT_DIR),
+                params={"weather": weather}
+            )
 
         # Log enhancements
         if job_id:
@@ -314,22 +326,17 @@ async def enhance_single(
     except Exception as exc:
         traceback.print_exc()
         return JSONResponse({"error": str(exc)}, status_code=500)
-from urllib.parse import urlparse
+
 
 def _resolve_url_to_path(url: str) -> Path:
     """Map a web URL (absolute or relative) back to a local filesystem path."""
-    # Handle absolute URLs by extracting the path component
     parsed_url = urlparse(url)
     path_str = parsed_url.path
-    
-    # Standardize path separators for Windows/Unix compatibility
     path_str = path_str.replace("\\", "/")
     
     if path_str.startswith("/clusters/"):
-        # /clusters/cluster_name/image.jpg -> uploads_temp/clustered/cluster_name/image.jpg
         return CLUSTER_OUT / path_str.replace("/clusters/", "", 1)
     if path_str.startswith("/output_web/"):
-        # /output_web/image.jpg -> output_web/image.jpg
         return OUTPUT_DIR / path_str.replace("/output_web/", "", 1)
         
     return Path(path_str)
@@ -340,7 +347,7 @@ async def process_object_removal(
     image_url: str = Form(...),
     cluster_id: str = Form(...),
     job_id: str = Form(...),
-    regions_json: str = Form(...), # List of [[x,y]] or [[x1,y1,x2,y2]]
+    regions_json: str = Form(...),
 ):
     """
     Handle removal of one or more objects (clicks or bboxes).

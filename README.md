@@ -25,6 +25,19 @@ The current pipeline is designed for cases like:
 - JSON output plus clustered image folders
 - optional post-cluster open-vocabulary detection with YOLO-World Large
 - SAM-based mask extraction and polygon boundaries for clustered images
+- Image restoration pipeline with fallback models (LaMa, Restormer, Real-ESRGAN, DeepFill, MPRNet)
+
+## Restoration Models Setup
+
+To use the restoration features, download the following model weights and place them in the `models/` directory:
+
+- **LaMa (Inpainting)**: Download from [Hugging Face](https://huggingface.co/smartywu/big-lama) and place in `models/big-lama/`
+- **Restormer (Restoration)**: Download `restormer.pth` from [Hugging Face](https://huggingface.co/cszn/Restormer) and place in `models/`
+- **Real-ESRGAN (Upscaling)**: Download `RealESRGAN_x4plus.pth` from [GitHub Releases](https://github.com/xinntao/Real-ESRGAN/releases) and place in `models/`
+- **DeepFill v2 (Inpainting Fallback)**: Download from [GitHub](https://github.com/nbei/Deep-Fill-Pytorch) and place in `models/deepfill_v2.pth`
+- **MPRNet (Restoration Fallback)**: Download from [GitHub](https://github.com/swz30/MPRNet) and place in `models/mprnet.pth`
+
+Install additional dependencies: `pip install basicsr realesrgan timm`
 
 ## What Is Not Implemented Yet
 
@@ -419,3 +432,5 @@ not as:
 - [requirements.txt](</c:/Users/Mohammed kaif M/OneDrive/Desktop/clustering images/requirements.txt>): Python dependencies
 - [input](</c:/Users/Mohammed kaif M/OneDrive/Desktop/clustering images/input>): input images
 - [output](</c:/Users/Mohammed kaif M/OneDrive/Desktop/clustering images/output>): clustered image output
+#   C l u s t e r i n g - I m a g e s  
+ 

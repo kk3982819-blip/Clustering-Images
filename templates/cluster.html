@@ -114,6 +114,35 @@ main { max-width: 1300px; margin: 0 auto; padding: 40px 24px 80px; }
 }
 .hero-container:hover .brush-cursor { display: block; }
 
+.weather-select {
+  min-width: 190px;
+  background: #0f172a;
+  border: 1px solid rgba(139, 92, 246, 0.28);
+  color: #e5eefc;
+  font-size: 0.75rem;
+  font-weight: 600;
+  border-radius: 6px;
+  padding: 4px 8px;
+  margin-left: 8px;
+  outline: none;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.weather-select:hover,
+.weather-select:focus {
+  border-color: var(--purple);
+  box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.16);
+}
+.weather-select option {
+  background: #ffffff;
+  color: #0f172a;
+}
+.weather-select optgroup {
+  background: #ffffff;
+  color: #334155;
+  font-weight: 700;
+}
+
 /* ── Magic Eraser Floating Panel ── */
 .eraser-tools {
   position: absolute; bottom: 24px; left: 50%; transform: translateX(-50%) translateY(20px);
@@ -323,7 +352,34 @@ main { max-width: 1300px; margin: 0 auto; padding: 40px 24px 80px; }
         <div class="feature-options">
           <div class="feat-label">⚙ AI Enhancements</div>
           <div class="feat-list">
-            <label class="feat-item"><input type="checkbox" name="ai_{{ cluster.id }}" value="sky_replacement"> Sky Replace</label>
+            <label class="feat-item">
+              <input type="checkbox" name="ai_{{ cluster.id }}" value="sky_replacement"> Sky Replace
+              <select class="weather-select" id="weather_{{ cluster.id }}">
+                <optgroup label="🌤 Clear & Day">
+                  <option value="sunny">Sunny (Cirrus)</option>
+                  <option value="partly_cloudy" selected>Partly Cloudy (Cumulus)</option>
+                  <option value="high_wisps">High-Level Wisps</option>
+                </optgroup>
+                <optgroup label="🌫 Atmospheric">
+                  <option value="cloudy">Overcast (Stratus)</option>
+                  <option value="foggy">Foggy/Misty</option>
+                  <option value="windy">Windy (Altocumulus)</option>
+                </optgroup>
+                <optgroup label="🌧 Precipitation">
+                  <option value="rainy">Rainy (Stormy)</option>
+                  <option value="drizzling">Light Drizzle</option>
+                  <option value="snowy">Snowy/Winter</option>
+                </optgroup>
+                <optgroup label="✨ Cinematic">
+                  <option value="sunset">Sunset (Golden Hour)</option>
+                  <option value="dramatic">Dramatic Storm</option>
+                  <option value="rainbow">Post-Rain Rainbow</option>
+                </optgroup>
+                <optgroup label="Night">
+                  <option value="night">Night</option>
+                </optgroup>
+              </select>
+            </label>
             <label class="feat-item"><input type="checkbox" name="ai_{{ cluster.id }}" value="declutter"> Declutter</label>
             <label class="feat-item"><input type="checkbox" name="ai_{{ cluster.id }}" value="day_to_dusk"> Day→Dusk</label>
             <label class="feat-item"><input type="checkbox" name="ai_{{ cluster.id }}" value="virtual_staging"> Staging</label>
@@ -433,9 +489,11 @@ async function enhanceCluster(clusterId, cardId, jobId) {
   loaderEl.innerHTML = '<div class="card-spinner"></div> Merging exposures &amp; enhancing...';
 
   const checkboxes = document.querySelectorAll(`input[name="ai_${cardId}"]:checked`);
+  const weather    = document.getElementById(`weather_${cardId}`).value;
   const form = new FormData();
   form.append('cluster_id', clusterId);
   form.append('job_id', jobId);
+  form.append('weather', weather);
   checkboxes.forEach(cb => form.append('ai_features', cb.value));
 
   try {
@@ -472,10 +530,12 @@ async function enhanceSingle(clusterId, cardId, jobId) {
   loaderEl.innerHTML = '<div class="card-spinner"></div> Enhancing single image...';
 
   const checkboxes = document.querySelectorAll(`input[name="ai_${cardId}"]:checked`);
+  const weather    = document.getElementById(`weather_${cardId}`).value;
   const form = new FormData();
   form.append('cluster_id', clusterId);
   form.append('job_id', jobId);
   form.append('filename', filename);
+  form.append('weather', weather);
   checkboxes.forEach(cb => form.append('ai_features', cb.value));
 
   try {
