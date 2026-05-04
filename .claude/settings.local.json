@@ -1,7 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "PowerShell(Get-ChildItem -Path \"c:\\\\Users\\\\Mohammed kaif M\\\\OneDrive\\\\Desktop\\\\clustering images\" -Force | Select-Object Name, @{Name=\"Type\"; Expression={if\\($_.PSIsContainer\\) {\"Directory\"} else {\"File\"}}} | Format-Table -AutoSize)"
-    ]
-  }
-}
