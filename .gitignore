@@ -5,12 +5,10 @@
 .vendor/
 __pycache__/
 *.pyc
+
+# Generated outputs
 output/
 output_web/
-uploads_temp/raw/
-uploads_temp/clustered/
-uploads_temp/clustered_next/
-pixeldwell.db
 output_20*/
 output_codex*/
 output_scene_labels*/
@@ -19,6 +17,16 @@ output_segmentation_smoke/
 output_test_sky/
 output_yolo_demo/
 outputs1/
+
+# Temporary processing data
+uploads_temp/
+pixeldwell.db
+pdf_content.txt
+
+# Auto-generated caches
+reference/.cache/
+
+# Temporary image artifacts
 debug_hdr_mask*.png
 image.png
 room_*.jpg
@@ -26,5 +34,20 @@ room_*.png
 temp_mask.png
 test_*.png
 test_output_sky.jpg
+
+# Corrupt/bad model files
 yolov8n-seg.bad.pt
 yolov8n-seg.corrupt.pt
+
+# IDE and tool settings (local only)
+.vscode/
+.claude/settings.local.json
+
+# Windows artifacts
+*.lnk
+
+# Runtime logs and SQLite temp files
+*.log
+*.db-journal
+*.db-wal
+*.db-shm
