@@ -595,7 +595,7 @@ async function startClustering() {
 
 // ── Render cluster cards ────────────────────────────────────────
 const STRUCTURAL = new Set(['ceiling','wall','floor','door','window','sliding glass door','kitchen cabinet','countertop','kitchen island','balcony']);
-const SCENE_TAGS  = new Set(['sky','cloud','green grass','trees','balcony','outdoor view','white wall','floor tiles']);
+const SCENE_TAGS  = new Set(['sky','cloud','green grass','trees','balcony','outdoor view','white wall','floor tiles','sunray','light ray','sunlight patch','sunlit floor','light spill','sunlight reflection','golden hour lighting','specular reflection','cast shadows','window light projection']);
 
 function tagClass(t) {
   if (STRUCTURAL.has(t)) return 'structural';
@@ -642,7 +642,7 @@ function renderClusters(clusters) {
       window.location.href = `/job/${c.job_id}/cluster/${c.id}`;
     };
 
-    const tagsHtml = (c.tags || []).slice(0, 3).map(t => `<span class="tag">${t}</span>`).join('');
+    const tagsHtml = (c.tags || []).slice(0, 3).map(t => `<span class="tag ${tagClass(String(t).toLowerCase())}">${t}</span>`).join('');
 
     card.innerHTML = `
       <div class="hero-container" style="height: 180px;">

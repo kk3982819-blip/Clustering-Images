@@ -338,7 +338,7 @@ main { max-width: 1300px; margin: 0 auto; padding: 40px 24px 80px; }
               {% set tag_class = 'object' %}
               {% if tag_lower in ['ceiling','wall','floor','door','window','sliding glass door','kitchen cabinet','countertop','kitchen island','balcony'] %}
                 {% set tag_class = 'structural' %}
-              {% elif tag_lower in ['sky','cloud','green grass','trees','balcony','outdoor view','white wall','floor tiles'] %}
+              {% elif tag_lower in ['sky','cloud','green grass','trees','balcony','outdoor view','white wall','floor tiles','sunray','light ray','sunlight patch','sunlit floor','light spill','sunlight reflection','golden hour lighting','specular reflection','cast shadows','window light projection'] %}
                 {% set tag_class = 'scene' %}
               {% endif %}
               <span class="tag {{ tag_class }}">{{ tag }}</span>
@@ -355,29 +355,17 @@ main { max-width: 1300px; margin: 0 auto; padding: 40px 24px 80px; }
             <label class="feat-item">
               <input type="checkbox" name="ai_{{ cluster.id }}" value="sky_replacement"> Sky Replace
               <select class="weather-select" id="weather_{{ cluster.id }}">
-                <optgroup label="🌤 Clear & Day">
-                  <option value="sunny">Sunny (Cirrus)</option>
-                  <option value="partly_cloudy" selected>Partly Cloudy (Cumulus)</option>
-                  <option value="high_wisps">High-Level Wisps</option>
-                </optgroup>
-                <optgroup label="🌫 Atmospheric">
-                  <option value="cloudy">Overcast (Stratus)</option>
-                  <option value="foggy">Foggy/Misty</option>
-                  <option value="windy">Windy (Altocumulus)</option>
-                </optgroup>
-                <optgroup label="🌧 Precipitation">
-                  <option value="rainy">Rainy (Stormy)</option>
-                  <option value="drizzling">Light Drizzle</option>
-                  <option value="snowy">Snowy/Winter</option>
-                </optgroup>
-                <optgroup label="✨ Cinematic">
-                  <option value="sunset">Sunset (Golden Hour)</option>
-                  <option value="dramatic">Dramatic Storm</option>
-                  <option value="rainbow">Post-Rain Rainbow</option>
-                </optgroup>
-                <optgroup label="Night">
-                  <option value="night">Night</option>
-                </optgroup>
+                <option value="clear" selected>Clear Blue Sky</option>
+                <option value="cloudy">Cloudy</option>
+                <option value="partly_cloudy">Soft Cloudy</option>
+                <option value="foggy">Foggy</option>
+                <option value="rainy">Rainy</option>
+                <option value="sunrise">Sunrise</option>
+                <option value="sunset">Sunset</option>
+                <option value="golden_hour">Golden Hour</option>
+                <option value="dusk">Dusk</option>
+                <option value="night">Night Moon</option>
+                <option value="dramatic">Dramatic Clouds</option>
               </select>
             </label>
             <label class="feat-item"><input type="checkbox" name="ai_{{ cluster.id }}" value="declutter"> Declutter</label>
@@ -465,8 +453,8 @@ function toggleDetections(cardId, e) {
   const activeThumb = strip ? strip.children[idx] : null;
   if(!activeThumb) return;
   
-  const original = activeThumb.getAttribute('data-original');
-  const labeled = activeThumb.getAttribute('data-labeled');
+  const original = activeThumb ? activeThumb.getAttribute('data-original') : '';
+  const labeled = activeThumb ? activeThumb.getAttribute('data-labeled') : '';
   if (!labeled) return;
   
   const isActive = toggleBtn.classList.toggle('active');
@@ -474,9 +462,32 @@ function toggleDetections(cardId, e) {
   
   heroImg.style.opacity = 0.5;
   setTimeout(() => {
-    heroImg.src = isActive ? labeled : original;
+    if (labeled) {
+      heroImg.src = isActive ? labeled : original;
+    }
     heroImg.style.opacity = 1;
   }, 150);
+}
+
+function withCacheBuster(url) {
+  if (!url) return '';
+  return url + (url.includes('?') ? '&' : '?') + 't=' + Date.now();
+}
+
+function setHdrResultImage(cardId, data, options = {}) {
+  const hdrImg = document.getElementById(`hdr_img_${cardId}`);
+  if (!hdrImg || !data.image_url) return;
+
+  const finalUrl = withCacheBuster(data.image_url);
+  hdrImg.dataset.original = data.image_url;
+  hdrImg.dataset.labeled = data.labeled_image_url || '';
+  hdrImg.src = finalUrl;
+  hdrImg.onclick = function() { openLightbox(finalUrl); };
+
+  const heroImg = document.getElementById(`hero_${cardId}`);
+  if (options.updateHero && heroImg) {
+    heroImg.src = finalUrl;
+  }
 }
 
 async function enhanceCluster(clusterId, cardId, jobId) {
@@ -501,7 +512,7 @@ async function enhanceCluster(clusterId, cardId, jobId) {
     const data = await res.json();
     if (data.error) { alert('Enhancement failed: ' + data.error); } 
     else {
-      document.getElementById(`hdr_img_${cardId}`).src = data.image_url + '?t=' + Date.now();
+      setHdrResultImage(cardId, data, { updateHero: true });
       resultEl.style.display = 'block';
     }
   } catch (err) { alert('Request failed: ' + err.message); } 
@@ -543,7 +554,7 @@ async function enhanceSingle(clusterId, cardId, jobId) {
     const data = await res.json();
     if (data.error) { alert('Enhancement failed: ' + data.error); } 
     else {
-      document.getElementById(`hdr_img_${cardId}`).src = data.image_url + '?t=' + Date.now();
+      setHdrResultImage(cardId, data, { updateHero: false });
       resultEl.style.display = 'block';
     }
   } catch (err) { alert('Request failed: ' + err.message); } 

@@ -5,6 +5,7 @@ from dataclasses import dataclass
 import importlib.util
 import json
 import logging
+import os
 import shutil
 import sys
 from pathlib import Path
@@ -143,6 +144,18 @@ SCENE_LABEL_COLORS = {
     "outdoor view": (255, 120, 60),
     "white wall": (200, 200, 200),
     "floor tiles": (0, 180, 255),
+}
+SUNRAY_LABEL_COLORS = {
+    "sunray": (0, 215, 255),
+    "light ray": (0, 200, 255),
+    "sunlight patch": (0, 185, 255),
+    "sunlit floor": (0, 170, 255),
+    "light spill": (0, 155, 255),
+    "sunlight reflection": (130, 215, 255),
+    "golden hour lighting": (0, 140, 255),
+    "specular reflection": (190, 225, 255),
+    "cast shadows": (120, 185, 220),
+    "window light projection": (70, 150, 255),
 }
 STRICT_ITEM_PROMPTS = [
     "a real estate interior photo of an empty room",
@@ -1504,6 +1517,9 @@ def annotation_color(annotation: ImageAnnotation) -> tuple[int, int, int]:
             "television": "tv",
         }.get(primary_label, primary_label)
         return WORLD_PROMPT_COLORS.get(normalized_label, (255, 170, 0))
+    if annotation.source == "sunray":
+        primary_label = annotation.labels[0][0].lower() if annotation.labels else ""
+        return SUNRAY_LABEL_COLORS.get(primary_label, (0, 200, 255))
 
     primary_label = annotation.labels[0][0] if annotation.labels else ""
     return SCENE_LABEL_COLORS.get(primary_label, (255, 170, 0))
@@ -1816,6 +1832,604 @@ def detect_scene_sky_cloud_annotations(
     return annotations
 
 
+def _sunray_component_label(
+    box: tuple[int, int, int, int],
+    image_height: int,
+    scene_type: str,
+) -> str:
+    x1, y1, x2, y2 = box
+    width = max(1, x2 - x1 + 1)
+    height = max(1, y2 - y1 + 1)
+    center_y = (y1 + y2) * 0.5
+    aspect_ratio = width / float(max(height, 1))
+
+    if center_y >= image_height * 0.57 and aspect_ratio >= 1.15:
+        return "Sunlit Floor"
+    if center_y >= image_height * 0.46 and aspect_ratio >= 0.95:
+        return "Sunlight Patch"
+    if scene_type == "outdoor_sky":
+        return "Sunray"
+    return "Light Ray"
+
+
+def _boundary_confidence(probability_map: np.ndarray, boundary: Boundary) -> float:
+    if not boundary:
+        return 0.0
+    height, width = probability_map.shape[:2]
+    region_mask = np.zeros((height, width), dtype=np.uint8)
+    cv2.fillPoly(region_mask, [boundary_to_cv_points(boundary)], 255)
+    pixels = region_mask > 0
+    if not np.any(pixels):
+        return 0.0
+    return float(np.clip(probability_map[pixels].mean(), 0.0, 1.0))
+
+
+def _boundary_mask(boundary: Boundary, shape: tuple[int, int]) -> np.ndarray:
+    mask = np.zeros(shape, dtype=np.uint8)
+    if not boundary:
+        return mask
+    cv2.fillPoly(mask, [boundary_to_cv_points(boundary)], 255)
+    return mask
+
+
+def _lighting_feature_maps(image_bgr: np.ndarray) -> dict[str, np.ndarray]:
+    h, w = image_bgr.shape[:2]
+    lab = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2LAB).astype(np.float32)
+    hsv = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2HSV).astype(np.float32)
+    gray = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2GRAY).astype(np.float32)
+    blur_sigma = max(6.0, min(h, w) * 0.015)
+    coarse_sigma = max(8.0, min(h, w) * 0.020)
+    l_norm = lab[:, :, 0] / 255.0
+    warmth = lab[:, :, 2] / 255.0
+    saturation = hsv[:, :, 1] / 255.0
+    blurred_gray = cv2.GaussianBlur(gray, (0, 0), blur_sigma)
+    local_contrast = np.abs(gray - blurred_gray) / 255.0
+    coarse_l = cv2.GaussianBlur(l_norm, (0, 0), coarse_sigma)
+    bright_delta = np.clip(l_norm - coarse_l, 0.0, 1.0)
+    dark_delta = np.clip(coarse_l - l_norm, 0.0, 1.0)
+    return {
+        "luminance": l_norm.astype(np.float32),
+        "warmth": warmth.astype(np.float32),
+        "saturation": saturation.astype(np.float32),
+        "local_contrast": local_contrast.astype(np.float32),
+        "coarse_luminance": coarse_l.astype(np.float32),
+        "bright_delta": bright_delta.astype(np.float32),
+        "dark_delta": dark_delta.astype(np.float32),
+    }
+
+
+def _region_values(values: np.ndarray, region_mask: np.ndarray) -> np.ndarray:
+    region = values[region_mask > 0]
+    if region.size == 0:
+        return np.zeros((0,), dtype=np.float32)
+    return region.astype(np.float32, copy=False)
+
+
+def _mask_to_tight_scene_candidates(
+    mask: np.ndarray,
+    width: int,
+    height: int,
+    min_area_ratio: float,
+    pad_ratio: float = 0.0015,
+    max_candidates: int = 4,
+    close_kernel: tuple[int, int] | None = None,
+    open_kernel: tuple[int, int] | None = None,
+    boundary_mode: str = "contour",
+) -> list[SceneRegionCandidate]:
+    mask_u8 = (mask.astype(np.uint8) * 255) if mask.dtype != np.uint8 else mask.copy()
+    if mask_u8.ndim != 2:
+        raise ValueError("Scene candidate masks must be single-channel.")
+
+    short_side = min(width, height)
+    if close_kernel is None:
+        close_kernel = (max(7, int(short_side / 230)), max(5, int(short_side / 320)))
+    if open_kernel is None:
+        open_kernel = (max(3, int(short_side / 900)), max(3, int(short_side / 1100)))
+    close_kernel = (close_kernel[0] | 1, close_kernel[1] | 1)
+    open_kernel = (open_kernel[0] | 1, open_kernel[1] | 1)
+
+    cleaned = cv2.morphologyEx(
+        mask_u8,
+        cv2.MORPH_CLOSE,
+        cv2.getStructuringElement(cv2.MORPH_ELLIPSE, close_kernel),
+        iterations=1,
+    )
+    cleaned = cv2.morphologyEx(
+        cleaned,
+        cv2.MORPH_OPEN,
+        cv2.getStructuringElement(cv2.MORPH_ELLIPSE, open_kernel),
+        iterations=1,
+    )
+    contours, _ = cv2.findContours(cleaned, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    min_area = max(1, int(width * height * min_area_ratio))
+    pad_x = max(2, int(width * pad_ratio))
+    pad_y = max(2, int(height * pad_ratio))
+
+    candidates: list[SceneRegionCandidate] = []
+    for contour in sorted(contours, key=cv2.contourArea, reverse=True)[:max_candidates]:
+        if cv2.contourArea(contour) < min_area:
+            continue
+        if boundary_mode == "sunlight_patch":
+            boundary = _contour_to_sunlight_patch_boundary(contour, width, height)
+        else:
+            boundary = contour_to_boundary(contour, width, height)
+        if not boundary:
+            continue
+        x, y, w, h = cv2.boundingRect(contour)
+        box = clamp_box(x - pad_x, y - pad_y, x + w - 1 + pad_x, y + h - 1 + pad_y, width, height)
+        if box is not None:
+            candidates.append(SceneRegionCandidate(box=box, boundary=boundary, allowed_labels=()))
+    return candidates
+
+
+def _contour_to_sunlight_patch_boundary(contour: np.ndarray, width: int, height: int) -> Boundary:
+    if len(contour) < 3:
+        return ()
+
+    hull = cv2.convexHull(contour)
+    hull_area = float(cv2.contourArea(hull))
+    if hull_area <= 1.0:
+        return contour_to_boundary(contour, width, height)
+
+    perimeter = float(cv2.arcLength(hull, True))
+    for epsilon_ratio in (0.020, 0.030, 0.045, 0.060):
+        approx = cv2.approxPolyDP(hull, max(2.0, perimeter * epsilon_ratio), True)
+        if 4 <= len(approx) <= 8:
+            boundary = normalize_boundary_points(approx.reshape(-1, 2), width, height)
+            if boundary:
+                return boundary
+
+    rect = cv2.minAreaRect(hull)
+    box = cv2.boxPoints(rect)
+    return normalize_boundary_points(box, width, height)
+
+
+def _keep_mask_components_touching_seed(
+    candidate_mask: np.ndarray,
+    seed_mask: np.ndarray,
+    min_area: int,
+) -> np.ndarray:
+    component_count, labels, stats, _ = cv2.connectedComponentsWithStats(candidate_mask, connectivity=8)
+    kept = np.zeros_like(candidate_mask)
+    if np.count_nonzero(seed_mask) == 0:
+        return kept
+
+    seed_dilate = cv2.dilate(
+        (seed_mask > 0).astype(np.uint8) * 255,
+        cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (29, 17)),
+        iterations=1,
+    )
+    for label in range(1, component_count):
+        area = int(stats[label, cv2.CC_STAT_AREA])
+        if area < min_area:
+            continue
+        component = labels == label
+        if np.count_nonzero(seed_dilate[component]) > 0:
+            kept[component] = 255
+    return kept
+
+
+def _specular_reflection_annotations(
+    candidate: SceneRegionCandidate,
+    image_height: int,
+    image_width: int,
+    feature_maps: dict[str, np.ndarray],
+) -> list[ImageAnnotation]:
+    x1, y1, x2, y2 = candidate.box
+    center_y = (y1 + y2) * 0.5
+    if center_y < image_height * 0.46:
+        return []
+
+    region_mask = _boundary_mask(candidate.boundary, (image_height, image_width))
+    l_values = _region_values(feature_maps["luminance"], region_mask)
+    saturation_values = _region_values(feature_maps["saturation"], region_mask)
+    bright_delta_values = _region_values(feature_maps["bright_delta"], region_mask)
+    contrast_values = _region_values(feature_maps["local_contrast"], region_mask)
+    if l_values.size < 60 or saturation_values.size == 0 or bright_delta_values.size == 0:
+        return []
+
+    highlight_threshold = max(0.70, float(np.percentile(l_values, 88)))
+    bright_delta_threshold = max(0.018, float(np.percentile(bright_delta_values, 65)))
+    saturation_threshold = min(0.30, float(np.percentile(saturation_values, 65)) + 0.03)
+    contrast_threshold = max(0.03, float(np.percentile(contrast_values, 58)))
+    specular_mask = (
+        (region_mask > 0)
+        & (feature_maps["luminance"] >= highlight_threshold)
+        & (feature_maps["bright_delta"] >= bright_delta_threshold)
+        & (feature_maps["saturation"] <= saturation_threshold)
+        & (feature_maps["local_contrast"] <= contrast_threshold)
+    ).astype(np.uint8) * 255
+    specular_mask = cv2.morphologyEx(
+        specular_mask,
+        cv2.MORPH_CLOSE,
+        cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (7, 7)),
+        iterations=1,
+    )
+    specular_mask = cv2.morphologyEx(
+        specular_mask,
+        cv2.MORPH_OPEN,
+        cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5)),
+        iterations=1,
+    )
+    specular_candidates = mask_to_scene_candidates(
+        mask=specular_mask,
+        width=image_width,
+        height=image_height,
+        allowed_labels=(),
+        min_area_ratio=0.00008,
+        pad_ratio=0.003,
+        max_candidates=2,
+    )
+    annotations: list[ImageAnnotation] = []
+    for specular_candidate in specular_candidates:
+        spec_mask = _boundary_mask(specular_candidate.boundary, (image_height, image_width))
+        spec_l = _region_values(feature_maps["luminance"], spec_mask)
+        spec_saturation = _region_values(feature_maps["saturation"], spec_mask)
+        spec_delta = _region_values(feature_maps["bright_delta"], spec_mask)
+        if spec_l.size == 0 or spec_saturation.size == 0 or spec_delta.size == 0:
+            continue
+        score = float(
+            np.clip(
+                np.percentile(spec_l, 92) * 0.58
+                + spec_delta.mean() * 2.2
+                + (1.0 - spec_saturation.mean()) * 0.20,
+                0.0,
+                1.0,
+            )
+        )
+        if score < 0.34:
+            continue
+        annotations.append(
+            ImageAnnotation(
+                source="sunray",
+                box=specular_candidate.box,
+                boundary=specular_candidate.boundary,
+                labels=(("Specular Reflection", max(0.35, score)),),
+            )
+        )
+    return annotations
+
+
+def _sunlight_reflection_annotations(
+    candidate: SceneRegionCandidate,
+    image_height: int,
+    image_width: int,
+    feature_maps: dict[str, np.ndarray],
+) -> list[ImageAnnotation]:
+    x1, y1, x2, y2 = candidate.box
+    center_y = (y1 + y2) * 0.5
+    if center_y < image_height * 0.48:
+        return []
+
+    region_mask = _boundary_mask(candidate.boundary, (image_height, image_width))
+    l_values = _region_values(feature_maps["luminance"], region_mask)
+    saturation_values = _region_values(feature_maps["saturation"], region_mask)
+    contrast_values = _region_values(feature_maps["local_contrast"], region_mask)
+    bright_delta_values = _region_values(feature_maps["bright_delta"], region_mask)
+    if l_values.size < 100 or saturation_values.size == 0 or bright_delta_values.size == 0:
+        return []
+
+    yy = np.arange(image_height, dtype=np.float32).reshape(-1, 1)
+    floor_top = int(max(image_height * 0.62, y1 if y1 > image_height * 0.54 else 0))
+    floor_bottom = int(image_height * 0.98)
+    floor_gate = (yy >= floor_top) & (yy <= floor_bottom)
+    floor_region_mask = ((region_mask > 0) & floor_gate).astype(np.uint8) * 255
+    floor_l_values = _region_values(feature_maps["luminance"], floor_region_mask)
+    floor_coarse_values = _region_values(feature_maps["coarse_luminance"], floor_region_mask)
+    floor_saturation_values = _region_values(feature_maps["saturation"], floor_region_mask)
+    floor_delta_values = _region_values(feature_maps["bright_delta"], floor_region_mask)
+    if floor_l_values.size < 100 or floor_coarse_values.size == 0:
+        return []
+
+    seed_threshold = max(0.82, float(np.percentile(floor_l_values, 90)))
+    grow_threshold = max(
+        0.76,
+        min(seed_threshold - 0.055, float(np.percentile(floor_l_values, 84))),
+        float(np.percentile(floor_l_values, 78)) + 0.035,
+    )
+    grow_coarse_threshold = max(0.74, float(np.percentile(floor_coarse_values, 82)))
+    saturation_threshold = min(0.42, float(np.percentile(floor_saturation_values, 72)) + 0.08)
+    seed_mask = (
+        (floor_region_mask > 0)
+        & (feature_maps["luminance"] >= seed_threshold)
+        & (feature_maps["saturation"] <= saturation_threshold + 0.08)
+    ).astype(np.uint8) * 255
+    candidate_mask = (
+        (floor_region_mask > 0)
+        & (
+            (
+                (feature_maps["luminance"] >= grow_threshold)
+                & (feature_maps["saturation"] <= saturation_threshold)
+            )
+            | (
+                (feature_maps["coarse_luminance"] >= grow_coarse_threshold)
+                & (feature_maps["luminance"] >= grow_threshold - 0.035)
+                & (feature_maps["saturation"] <= saturation_threshold + 0.04)
+            )
+        )
+    ).astype(np.uint8) * 255
+    candidate_mask = cv2.morphologyEx(
+        candidate_mask,
+        cv2.MORPH_CLOSE,
+        cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (25, 13)),
+        iterations=1,
+    )
+    candidate_mask = cv2.morphologyEx(
+        candidate_mask,
+        cv2.MORPH_OPEN,
+        cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (7, 5)),
+        iterations=1,
+    )
+    reflection_mask = _keep_mask_components_touching_seed(
+        candidate_mask=candidate_mask,
+        seed_mask=seed_mask,
+        min_area=max(120, int(image_width * image_height * 0.00008)),
+    )
+    reflection_candidates = _mask_to_tight_scene_candidates(
+        mask=reflection_mask,
+        width=image_width,
+        height=image_height,
+        min_area_ratio=0.00012,
+        pad_ratio=0.0015,
+        max_candidates=4,
+        close_kernel=(17, 9),
+        open_kernel=(5, 5),
+        boundary_mode="sunlight_patch",
+    )
+
+    annotations: list[ImageAnnotation] = []
+    for reflection_candidate in reflection_candidates:
+        rx1, ry1, rx2, ry2 = reflection_candidate.box
+        if (ry1 + ry2) * 0.5 < image_height * 0.50:
+            continue
+        reflection_width = max(1, rx2 - rx1 + 1)
+        reflection_height = max(1, ry2 - ry1 + 1)
+        aspect_ratio = reflection_width / float(max(reflection_height, 1))
+        if aspect_ratio < 0.72 or reflection_height > image_height * 0.34:
+            continue
+        reflection_region = _boundary_mask(reflection_candidate.boundary, (image_height, image_width))
+        reflection_l = _region_values(feature_maps["luminance"], reflection_region)
+        reflection_saturation = _region_values(feature_maps["saturation"], reflection_region)
+        reflection_delta = _region_values(feature_maps["bright_delta"], reflection_region)
+        if reflection_l.size == 0 or reflection_saturation.size == 0 or reflection_delta.size == 0:
+            continue
+        score = float(
+            np.clip(
+                reflection_l.mean() * 0.50
+                + (1.0 - reflection_saturation.mean()) * 0.22
+                + reflection_delta.mean() * 2.0,
+                0.0,
+                1.0,
+            )
+        )
+        if score < 0.38:
+            continue
+        labels: list[tuple[str, float]] = [
+            ("Sunlight Reflection", max(0.38, score)),
+            ("Light Spill", max(0.35, min(score * 0.92, 0.95))),
+        ]
+        reflection_warmth = _region_values(feature_maps["warmth"], reflection_region)
+        if reflection_warmth.size > 0:
+            golden_hour_score = float(
+                np.clip(
+                    (np.percentile(reflection_warmth, 70) - 0.54) * 2.2
+                    + reflection_l.mean() * 0.12,
+                    0.0,
+                    1.0,
+                )
+            )
+            if golden_hour_score >= 0.36:
+                labels.append(("Golden Hour Lighting", max(0.36, golden_hour_score)))
+        annotations.append(
+            ImageAnnotation(
+                source="sunray",
+                box=reflection_candidate.box,
+                boundary=reflection_candidate.boundary,
+                labels=tuple(labels),
+            )
+        )
+    return annotations
+
+
+def _cast_shadow_annotations(
+    candidate: SceneRegionCandidate,
+    image_height: int,
+    image_width: int,
+    feature_maps: dict[str, np.ndarray],
+) -> list[ImageAnnotation]:
+    x1, y1, x2, y2 = candidate.box
+    center_y = (y1 + y2) * 0.5
+    if center_y < image_height * 0.48:
+        return []
+
+    region_mask = _boundary_mask(candidate.boundary, (image_height, image_width))
+    luminance_values = _region_values(feature_maps["coarse_luminance"], region_mask)
+    dark_delta_values = _region_values(feature_maps["dark_delta"], region_mask)
+    contrast_values = _region_values(feature_maps["local_contrast"], region_mask)
+    if luminance_values.size < 80 or dark_delta_values.size == 0 or contrast_values.size == 0:
+        return []
+
+    lit_floor_gate = feature_maps["coarse_luminance"] >= max(0.46, float(np.percentile(luminance_values, 48)))
+    dark_threshold = max(0.020, float(np.percentile(dark_delta_values, 70)))
+    contrast_threshold = max(0.045, float(np.percentile(contrast_values, 60)))
+    shadow_mask = (
+        (region_mask > 0)
+        & lit_floor_gate
+        & (feature_maps["dark_delta"] >= dark_threshold)
+        & (feature_maps["local_contrast"] >= contrast_threshold)
+    ).astype(np.uint8) * 255
+    shadow_mask = cv2.morphologyEx(
+        shadow_mask,
+        cv2.MORPH_OPEN,
+        cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3)),
+        iterations=1,
+    )
+    shadow_mask = cv2.morphologyEx(
+        shadow_mask,
+        cv2.MORPH_CLOSE,
+        cv2.getStructuringElement(cv2.MORPH_RECT, (9, 5)),
+        iterations=1,
+    )
+
+    shadow_candidates = mask_to_scene_candidates(
+        mask=shadow_mask,
+        width=image_width,
+        height=image_height,
+        allowed_labels=(),
+        min_area_ratio=0.00005,
+        pad_ratio=0.002,
+        max_candidates=3,
+    )
+    annotations: list[ImageAnnotation] = []
+    for shadow_candidate in shadow_candidates:
+        sx1, sy1, sx2, sy2 = shadow_candidate.box
+        shadow_width = max(1, sx2 - sx1 + 1)
+        shadow_height = max(1, sy2 - sy1 + 1)
+        elongation = max(shadow_width, shadow_height) / float(max(1, min(shadow_width, shadow_height)))
+        if elongation < 2.2:
+            continue
+        shadow_region_mask = _boundary_mask(shadow_candidate.boundary, (image_height, image_width))
+        shadow_delta = _region_values(feature_maps["dark_delta"], shadow_region_mask)
+        shadow_contrast = _region_values(feature_maps["local_contrast"], shadow_region_mask)
+        if shadow_delta.size == 0 or shadow_contrast.size == 0:
+            continue
+        score = float(
+            np.clip(
+                shadow_delta.mean() * 5.0
+                + shadow_contrast.mean() * 2.0,
+                0.0,
+                1.0,
+            )
+        )
+        if score < 0.35:
+            continue
+        annotations.append(
+            ImageAnnotation(
+                source="sunray",
+                box=shadow_candidate.box,
+                boundary=shadow_candidate.boundary,
+                labels=(
+                    ("Cast Shadows", max(0.35, score)),
+                    ("Window Light Projection", max(0.35, score * 0.96)),
+                ),
+            )
+        )
+    return annotations
+
+
+def detect_sunray_annotations(
+    image_path: Path,
+    mask_output_dir: Path,
+    image_bgr: np.ndarray | None = None,
+) -> tuple[list[ImageAnnotation], list[str]]:
+    from sunray_pipeline import run_sunray_pipeline
+
+    mask_output_dir.mkdir(parents=True, exist_ok=True)
+    mask_name = f"{image_path.stem}_sunraymask.png"
+    mask_path = mask_output_dir / mask_name
+    temp_sky_mask_path = mask_output_dir / f"{image_path.stem}_sunray_skymask.png"
+    mode = "pretrained_baseline"
+    fast_light_sources = os.environ.get("SUNRAY_CLUSTER_FAST_MODE", "").strip().lower() not in {"0", "false", "no"}
+
+    try:
+        result = run_sunray_pipeline(
+            image_path=image_path,
+            output_mask_path=mask_path,
+            mode=mode,
+            debug=False,
+            fast_light_sources=fast_light_sources,
+            processing_max_dim=2600 if fast_light_sources else None,
+        )
+    except Exception as exc:
+        logging.warning("Sunray annotation failed for %s: %s", image_path.name, exc)
+        if mask_path.exists():
+            mask_path.unlink()
+        if temp_sky_mask_path.exists():
+            temp_sky_mask_path.unlink()
+        return [], []
+
+    if temp_sky_mask_path.exists():
+        temp_sky_mask_path.unlink()
+
+    if not result.success or np.count_nonzero(result.binary_mask) == 0:
+        if mask_path.exists():
+            mask_path.unlink()
+        return [], []
+
+    if image_bgr is None:
+        image_bgr = cv2.imread(str(image_path))
+        if image_bgr is None:
+            if mask_path.exists():
+                mask_path.unlink()
+            return [], []
+
+    height, width = result.binary_mask.shape[:2]
+    feature_maps = _lighting_feature_maps(image_bgr)
+    candidates = mask_to_scene_candidates(
+        mask=result.binary_mask,
+        width=width,
+        height=height,
+        allowed_labels=(),
+        min_area_ratio=0.00035,
+        pad_ratio=0.006,
+        max_candidates=6,
+    )
+    if not candidates:
+        if mask_path.exists():
+            mask_path.unlink()
+        return [], []
+
+    annotations: list[ImageAnnotation] = []
+    for candidate in candidates:
+        label = _sunray_component_label(candidate.box, height, result.scene_type)
+        score = max(0.35, _boundary_confidence(result.probability_map, candidate.boundary))
+        labels: list[tuple[str, float]] = [(label, score)]
+        tight_sunlight_annotations: list[ImageAnnotation] = []
+        if label in {"Sunlit Floor", "Sunlight Patch"}:
+            region_mask = _boundary_mask(candidate.boundary, (height, width))
+            region_l = _region_values(feature_maps["luminance"], region_mask)
+            region_warmth = _region_values(feature_maps["warmth"], region_mask)
+            region_saturation = _region_values(feature_maps["saturation"], region_mask)
+            if region_l.size > 0 and region_warmth.size > 0 and region_saturation.size > 0:
+                spill_score = float(
+                    np.clip(
+                        region_l.mean() * 0.44
+                        + (1.0 - region_saturation.mean()) * 0.12
+                        + score * 0.44,
+                        0.0,
+                        1.0,
+                    )
+                )
+                if spill_score >= 0.38:
+                    labels.append(("Light Spill", max(0.35, spill_score)))
+                golden_hour_score = float(
+                    np.clip(
+                        (np.percentile(region_warmth, 68) - 0.54) * 2.6
+                        + region_l.mean() * 0.20,
+                        0.0,
+                        1.0,
+                    )
+                )
+                if golden_hour_score >= 0.34:
+                    labels.append(("Golden Hour Lighting", max(0.35, golden_hour_score)))
+            tight_sunlight_annotations = _sunlight_reflection_annotations(candidate, height, width, feature_maps)
+        if tight_sunlight_annotations:
+            annotations.extend(tight_sunlight_annotations)
+        else:
+            annotations.append(
+                ImageAnnotation(
+                    source="sunray",
+                    box=candidate.box,
+                    boundary=candidate.boundary,
+                    labels=tuple(labels),
+                )
+            )
+        annotations.extend(_specular_reflection_annotations(candidate, height, width, feature_maps))
+        annotations.extend(_cast_shadow_annotations(candidate, height, width, feature_maps))
+
+    return annotations, [mask_name]
+
+
 def draw_labeled_boundary(
     image: np.ndarray,
     boundary: Boundary,
@@ -2085,6 +2699,7 @@ def annotate_clustered_image(
     if image is None:
         raise RuntimeError(f"Could not read image for annotation: {image_path}")
 
+    output_path.parent.mkdir(parents=True, exist_ok=True)
     saved_masks: list[str] = []
     annotations: list[ImageAnnotation] = []
     if detection_runtime is not None:
@@ -2099,6 +2714,14 @@ def annotate_clustered_image(
                 raise RuntimeError(f"Could not write segmentation mask: {mask_path}")
             saved_masks.append(mask_name)
     annotations.extend(detect_scene_sky_cloud_annotations(image_bgr=image, scene_labeler=scene_labeler))
+    if mask_output_dir is not None:
+        sunray_annotations, sunray_masks = detect_sunray_annotations(
+            image_path=image_path,
+            mask_output_dir=mask_output_dir,
+            image_bgr=image,
+        )
+        annotations.extend(sunray_annotations)
+        saved_masks.extend(sunray_masks)
 
     annotated_image = image.copy()
     for annotation in annotations:
@@ -2128,9 +2751,8 @@ def copy_clustered_images(
         raise ValueError("Image tags must align with image paths.")
 
     result: dict[str, list[dict[str, object]]] = {}
-    masks_root_dir = output_dir / "masks" if detection_runtime is not None else None
-    if masks_root_dir is not None:
-        masks_root_dir.mkdir(parents=True, exist_ok=True)
+    masks_root_dir = output_dir / "masks"
+    masks_root_dir.mkdir(parents=True, exist_ok=True)
 
     unique_labels = sorted(set(int(label) for label in labels))
     for label in unique_labels:
